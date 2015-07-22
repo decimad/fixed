@@ -220,6 +220,9 @@ void div_test2() {
 	
 	constexpr auto result = div<fits<1,31>, positive>(nom, den);
 	CA result_val = result.to<double>();
+
+	CA scaling = ufixed<-28, 60>::scaling;
+	constexpr auto seconds_factor = ufixed<-28, 60>::from(1e-9);
 }
 
 

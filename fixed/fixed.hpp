@@ -145,7 +145,7 @@ namespace fix {
 		static constexpr int free_bits = value_bits - low_bits;
 		
 		// scaling (exp2) which needs to be applied to value to shift the fractional digit before the LSB (ie. to extract the integer-part), !not! considering offset
-		static constexpr int scaling = -fractional_bits + util::min(integer_bits, 0);
+		static constexpr int scaling = -fractional_bits;
 
 		// the maximum positive scaling shift which can be applied without promotion
 		static constexpr int max_shift = (Signed) ? util::min(free_bits - 1, 0) : free_bits;
