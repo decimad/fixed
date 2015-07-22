@@ -170,7 +170,7 @@ namespace fix {
 		template<typename T>
 		constexpr T bitmask(int bits)
 		{
-			return (bits == 0) ? 0 : ((bitmask<T>(bits - 1) << 1) | 1);
+			return (bits == 0) ? 0 : ((T(1) << (bits-1)) | bitmask<T>(bits - 1));
 		}
 
 		namespace detail {
