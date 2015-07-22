@@ -448,6 +448,23 @@ namespace fix {
 				(detail::integral_round_switch<Mode>::round(value, -exponent) >> (-exponent));
 		}
 
+		//
+		// Supporting Macros
+		//
+		template<typename S>
+		constexpr unsigned int integer_bits(S value)
+		{
+			//     simple log2 of the integer part     if signed we need a bit more         if value is positive and matches a power, we need one more again
+			return log2_ceil(trunc(abs(value))) + ((value < 0) ? 1 : 0) + ((value > 0 && is_power_of_2(trunc(value))) ? 1 : 0);
+		}
+
+		template<typename S, typename U>
+		constexpr unsigned int integer_bits_interval(S s, U u)
+		{
+			// FIXME: sign handling is no correct
+			return util::max(integer_bits(s), integer_bits(u)) + ((s < 0 || u <0) ? 1 : 0);
+		}
+
 	}
 
 }

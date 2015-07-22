@@ -13,6 +13,18 @@ void storage_type_test() {
 	static_assert(std::is_same< decltype(value_uint16)::value_type, unsigned short >::value, "Wrong storage type");
 }
 
+void macro_test()
+{
+	constexpr auto size_value = FIXED_VALUE_S(2.45, 32);	// Given result size
+	constexpr auto prec_value = FIXED_VALUE_P(2.45, 8);		// Given result precision
+
+	using range_p_value_type = FIXED_RANGE_TYPE_P(-2.45, 10.45, 5);
+	using range_s_value_type = FIXED_RANGE_TYPE_S(-2.45, 10.45, 32);
+
+	constexpr auto conv1 = size_value.to<double>();
+	constexpr auto conv2 = prec_value.to<double>();
+}
+
 void from_floating_rounding_test()
 {
 	using namespace fix;

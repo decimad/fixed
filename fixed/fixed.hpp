@@ -562,4 +562,23 @@ namespace fix {
 
 }
 
+#define FIXED_TYPE_S(Value, Size) \
+	::fix::fixed<::fix::util::integer_bits(Value), Size-::fix::util::integer_bits(Value), (Value<0)>
+
+#define FIXED_TYPE_P(Value, Precision) \
+	::fix::fixed<::fix::util::integer_bits(Value), Precision, (Value<0)>
+
+#define FIXED_VALUE_S(Value, Size) \
+	FIXED_TYPE_S(Value, Size)::from(Value)
+
+#define FIXED_VALUE_P(Value, Precision) \
+	FIXED_TYPE_P(Value, Precision)::from(Value)
+
+#define FIXED_RANGE_TYPE_S(Min, Max, Size) \
+	::fix::fixed<::fix::util::integer_bits_interval(Min,Max), Size - ::fix::util::integer_bits_interval(Min,Max), (Min < 0 || Max < 0)>
+
+#define FIXED_RANGE_TYPE_P(Min, Max, Precision) \
+	::fix::fixed<::fix::util::integer_bits_interval(Min,Max), Precision, (Min < 0 || Max < 0)>
+
+
 #endif
