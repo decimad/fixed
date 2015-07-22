@@ -1,0 +1,8 @@
+Release*/
+Debug*/
+obsolete*/
+*.vcxproj*
+*.sdf
+*.opensdf
+*.sln
+*.vs*/
