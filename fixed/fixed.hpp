@@ -160,6 +160,14 @@ namespace fix {
 			: value(value_)
 		{}
 
+
+		template< int Off, typename T >
+		fixed& operator=(fixed<IntegerBits, FractionalBits, Signed, Off, T> other)
+		{
+			value = other.scaling_shift<Offset - Off>().value;
+			return *this;
+		}
+		
 		/*
 		constexpr fixed(const fixed& other)
 			: value(other.value)
@@ -253,7 +261,7 @@ namespace fix {
 		static constexpr int value = Value;
 	};
 
-	using platform_max_size = max_size<32>;
+	using platform_max_size = max_size<64>;
 	
 	struct positive {};
 
@@ -328,12 +336,12 @@ namespace fix {
 			using den_type = fixed<DenI, DenF, DenS, DenO, DenT>;
 			using parsed_args = div_args<Args>;
 
-			using result_value_type = typename auto_type<NomT, DenT>::type;
+			using auto_result_value_type = typename auto_type<NomT, DenT>::type;
 
 			static constexpr int auto_i = NomI + DenF;
 			static constexpr bool source_signed = NomS || DenS;
 			static constexpr int result_i = parsed_args::constrained_integer ? parsed_args::result_range::integer_bits : auto_i;
-			static constexpr int auto_f = int(sizeof(result_value_type) * 8) - result_i;
+			static constexpr int auto_f = int(sizeof(auto_result_value_type) * 8) - result_i;
 			static constexpr int result_f = parsed_args::constrained_fraction ? parsed_args::result_range::fraction_bits : auto_f;
 
 			static constexpr int max_size = parsed_args::max_size;
@@ -341,6 +349,7 @@ namespace fix {
 			static constexpr bool assume_positive = parsed_args::assume_result_positive;
 
 			using result_type = fixed<result_i, result_f, source_signed && !assume_positive>;
+			using result_value_type = typename result_type::value_type;
 
 			// should not assert ever, at least if the user doesn't give I and F and a max_size which doesn't fit them.
 			static_assert(result_i + result_f <= max_size, "Cannot divide with given constraints.");
@@ -352,7 +361,9 @@ namespace fix {
 			
 			static constexpr result_type divide(nom_type nom, den_type den)
 			{
-				return result_type(nom.template scaling_shift<shift_nom>().value / den.template scaling_shift<shift_den>().value);
+				return result_type(
+					static_cast<result_value_type>(nom.template scaling_shift<shift_nom>().value / den.template scaling_shift<shift_den>().value )
+					);
 			}
 		};
 	}
@@ -579,6 +590,9 @@ namespace fix {
 
 #define FIXED_VALUE_P(Value, Precision) \
 	FIXED_TYPE_P(Value, Precision)::from(Value)
+
+#define FIXED_INTEGER(Value) \
+	FIXED_VALUE_P(Value, 0)
 
 #define FIXED_RANGE_TYPE_S(Min, Max, Size) \
 	::fix::fixed<::fix::util::integer_bits_interval(Min,Max), Size - ::fix::util::integer_bits_interval(Min,Max), (Min < 0 || Max < 0)>

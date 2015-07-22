@@ -199,8 +199,10 @@ void div_test() {
 
 void add_test()
 {
-	using a_type = fix::fixed<28, -8, false, 1>;
-	using b_type = fix::fixed<12, -8, true, 15>;
+	using namespace fix;
+
+	using a_type = fixed<28, -8, false, 1>;
+	using b_type = fixed<12, -8, true, 15>;
 	
 	constexpr a_type lhs = a_type::from(272323);
 	constexpr b_type rhs = b_type::from(1028);
@@ -208,7 +210,7 @@ void add_test()
 	constexpr auto a_test = lhs.to<double>();
 	constexpr auto b_test = rhs.to<double>();
 
-	using add_sub_struct = fix::detail::add_sub_struct< fix::meta::list<fix::fits<22, 0>>, a_type, b_type >;
+	using add_sub_struct = detail::add_sub_struct< meta::list<fits<22, 0>>, a_type, b_type >;
 
 	constexpr auto a_shift = add_sub_struct::a_shift;
 	constexpr auto a_fixed = lhs.scaling_shift<a_shift>();
@@ -223,14 +225,35 @@ void add_test()
 	constexpr auto overshoot  = add_sub_struct::overshoot;
 	constexpr auto undershoot = add_sub_struct::undershoot;
 
-	constexpr auto sum = fix::add<fix::positive, fix::fits<22,0>>(lhs, rhs);
+	constexpr auto sum = add<positive, fits<22,0>>(lhs, rhs);
 	constexpr auto value = sum.to<double>();
+}
+
+#define CA constexpr auto
+
+void sub_test()
+{
+	using namespace fix;
+
+	using a_type = decltype(integer(10000000000ull));
+	using b_type = decltype(integer(10010000000ull));
+
+	using div_diag = detail::div_struct< meta::list< fits<1, 31>, positive, max_size<64> >, a_type, b_type >;
+	CA result_i = div_diag::result_i;
+	CA result_f = div_diag::result_f;
+	CA shift_a = div_diag::shift_nom;
+	CA shift_b = div_diag::shift_den;
+	
+	constexpr auto drift = div<fits<1, 31>, positive, max_size<64>>(integer(10000000000ull), integer(10010000000ull));
+
 }
 
 void mul_test()
 {
-	using a_type = fix::sfixed<32, 0>;
-	using b_type = fix::sfixed<2, 30>;
+	using namespace fix;
+
+	using a_type = sfixed<32, 0>;
+	using b_type = sfixed<2, 30>;
 
 	constexpr auto a = a_type::from(-89.214);
 	constexpr auto a_value = a.to<double>();
@@ -238,7 +261,7 @@ void mul_test()
 	constexpr auto b = b_type::from(-1.4156);
 	constexpr auto b_value = b.to<double>();
 	
-	using diag = fix::detail::mul_struct<fix::meta::list<fix::fits<22,10>>, a_type, b_type>;
+	using diag = detail::mul_struct<meta::list<fits<22,10>>, a_type, b_type>;
 
 	constexpr auto overshoot = diag::overshoot;
 	constexpr auto a_shift_temp = diag::a_shift_temp;
@@ -250,9 +273,9 @@ void mul_test()
 	constexpr auto a_shift = diag::a_shift;
 	constexpr auto b_shift = diag::b_shift;
 
-	constexpr auto test = fix::integer(32);
+	constexpr auto test = integer(32);
 
 	//                                result > 0     9 int bits   restrict to 32 bit temporary (pre-mult rounding!)
-	constexpr auto result = fix::mul<fix::fits<22,10>>(a, b);
+	constexpr auto result = mul<fits<22,10>>(a, b);
 	constexpr auto result_value = result.to<double>();
 }
