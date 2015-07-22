@@ -12,8 +12,8 @@ namespace fix {
 
 	namespace util {
 
-		using largest_unsigned_type = unsigned __int64;
-		using largest_signed_type   = __int64;
+		using largest_unsigned_type = unsigned long long;
+		using largest_signed_type   = long long;
 
 		template<typename T>
 		constexpr typename std::enable_if<std::is_integral<T>::value, T>::type
