@@ -136,7 +136,7 @@ namespace fix {
 		static constexpr int radix_pos = fractional_bits + offset;
 
 		// number of significant bits
-		static constexpr int data_bits = util::max(integer_bits, 0) + util::max(fractional_bits, 0);
+		static constexpr int data_bits = integer_bits + fractional_bits;
 
 		// numer of bits used for integer, fractional and offset
 		static constexpr int low_bits = data_bits + offset;
@@ -212,8 +212,8 @@ namespace fix {
 		{
 			// Need to be more sophisticated here... detect powers of 2 and such which make negative integers or fractions possible (for constants)
 			return
-				( util::test_overflow<value_type, data_bits>(util::round(util::scaled_exp2(value, -scaling))) ) ?
-				fixed(static_cast<value_type>(util::scaled_exp2<S, RoundingWrapper::value>(value, -scaling)) << offset) : (throw std::logic_error("Out of Bounds."));
+				//( util::test_overflow<value_type, data_bits>(util::round(util::scaled_exp2(value, -scaling))) ) ?
+				fixed(static_cast<value_type>(util::scaled_exp2<S, RoundingWrapper::value>(value, -scaling)) << offset) /*: (throw std::logic_error("Out of Bounds."))*/;
 		}
 
 		template<typename S, typename RoundingWrapper = rounding::floor>
@@ -560,6 +560,12 @@ namespace fix {
 		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AO, AT>, fixed<BI, BF, BS, BO, BT> >::sub(a, b);
 	}
 
+	template< typename T >
+	constexpr fixed<sizeof(T) * 8, 0, std::is_signed<T>::value> integer(T value)
+	{
+		return fixed<sizeof(T) * 8, 0, std::is_signed<T>::value>(value);
+	}
+
 }
 
 #define FIXED_TYPE_S(Value, Size) \
@@ -579,6 +585,5 @@ namespace fix {
 
 #define FIXED_RANGE_TYPE_P(Min, Max, Precision) \
 	::fix::fixed<::fix::util::integer_bits_interval(Min,Max), Precision, (Min < 0 || Max < 0)>
-
 
 #endif

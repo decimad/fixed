@@ -229,16 +229,30 @@ void add_test()
 
 void mul_test()
 {
-	using a_type = fix::sfixed<12, 16>;
-	using b_type = fix::sfixed<8, 16>;
+	using a_type = fix::sfixed<32, 0>;
+	using b_type = fix::sfixed<2, 30>;
 
 	constexpr auto a = a_type::from(-89.214);
 	constexpr auto a_value = a.to<double>();
 	
-	constexpr auto b = b_type::from(-5.4156);
+	constexpr auto b = b_type::from(-1.4156);
 	constexpr auto b_value = b.to<double>();
 	
+	using diag = fix::detail::mul_struct<fix::meta::list<fix::fits<22,10>>, a_type, b_type>;
+
+	constexpr auto overshoot = diag::overshoot;
+	constexpr auto a_shift_temp = diag::a_shift_temp;
+	constexpr auto b_shift_temp = diag::b_shift_temp;
+
+	using shifted_a_type = diag::shifted_a_type;
+	using shifted_b_type = diag::shifted_b_type;
+
+	constexpr auto a_shift = diag::a_shift;
+	constexpr auto b_shift = diag::b_shift;
+
+	constexpr auto test = fix::integer(32);
+
 	//                                result > 0     9 int bits   restrict to 32 bit temporary (pre-mult rounding!)
-	constexpr auto result = fix::mul<fix::positive, fix::fits<9>, fix::max_size<32>>(a, b);
+	constexpr auto result = fix::mul<fix::fits<22,10>>(a, b);
 	constexpr auto result_value = result.to<double>();
 }
