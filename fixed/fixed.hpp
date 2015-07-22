@@ -22,8 +22,8 @@
 
 namespace fix {
 
-	using int64 = __int64;
-	using uint64 = unsigned __int64;
+	using int64 = long long;
+	using uint64 = unsigned long long;
 
 	//
 	// Value type deduction
@@ -193,7 +193,7 @@ namespace fix {
 		template< int Shift >
 		constexpr typename scaling_values<Shift>::result_type scaling_shift() const {
 			// Fixme: no rounding applied here (if shifting down, do everything up to offset without rounding and round the rest accordingly before shifting)
-			return scaling_values<Shift>::result_type(
+			return typename scaling_values<Shift>::result_type(
 				static_cast<typename scaling_values<Shift>::postcast_type>(
 					util::shifted( static_cast<typename scaling_values<Shift>::precast_type>(value), Shift)
 				)
@@ -352,7 +352,7 @@ namespace fix {
 			
 			static constexpr result_type divide(nom_type nom, den_type den)
 			{
-				return result_type(nom.scaling_shift<shift_nom>().value / den.scaling_shift<shift_den>().value);
+				return result_type(nom.template scaling_shift<shift_nom>().value / den.template scaling_shift<shift_den>().value);
 			}
 		};
 	}
@@ -427,7 +427,7 @@ namespace fix {
 			using shifted_a_type = typename a_type::template scaling_shifted_type<a_shift>;
 			using shifted_b_type = typename b_type::template scaling_shifted_type<b_shift>;
 
-			static_assert(shifted_a_type::low_bits + shifted_b_type::low_bits <= max_size, "Overshooting temporary.");
+			static_assert((shifted_a_type::low_bits + shifted_b_type::low_bits) <= max_size, "Overshooting temporary.");
 
 			using mul_result_value_type = value_type_t<shifted_a_type::low_bits + shifted_b_type::low_bits, auto_s>;
 			static constexpr int mul_result_radix_pos = shifted_a_type::radix_pos + shifted_b_type::radix_pos;
@@ -442,9 +442,9 @@ namespace fix {
 
 			static constexpr result_type mul(a_type a, b_type b)
 			{
-				return result_type( static_cast<result_type::value_type>(
+				return result_type( static_cast<typename result_type::value_type>(
 					util::scaled_exp2<mul_result_value_type, parsed_args::rounding>(
-						mul_result_value_type(a.scaling_shift<a_shift>().value) * b.scaling_shift<b_shift>().value,
+						mul_result_value_type(a.template scaling_shift<a_shift>().value) * b.template scaling_shift<b_shift>().value,
 						result_shift)
 					) );
 			}
@@ -539,11 +539,11 @@ namespace fix {
 			using add_result_type = fixed<result_i, result_f, RS_sum, result_o>;
 
 			constexpr static add_result_type add(A a, B b) {
-				return add_result_type(a.scaling_shift<a_shift>().value + b.scaling_shift<b_shift>().value);
+				return add_result_type(a.template scaling_shift<a_shift>().value + b.template scaling_shift<b_shift>().value);
 			}
 
 			constexpr static sub_result_type sub(A a, B b) {
-				return sub_result_type(a.scaling_shift<a_shift>().value - b.scaling_shift<b_shift>().value);
+				return sub_result_type(a.template scaling_shift<a_shift>().value - b.template scaling_shift<b_shift>().value);
 			}
 		};
 	}

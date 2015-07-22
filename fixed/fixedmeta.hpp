@@ -80,10 +80,11 @@ namespace fix {
 			using type = void_type;
 		};
 
+/*
 		template< typename... T >
 		struct value_template
 		{
-			template < template< T... > typename Template >
+			template < template< T... > class Template >
 			struct finder {
 				template< typename Elem >
 				struct apply {
@@ -99,7 +100,7 @@ namespace fix {
 				};
 			};
 		};
-	
+*/
 	}
 
 }
