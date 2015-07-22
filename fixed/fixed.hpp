@@ -177,7 +177,7 @@ namespace fix {
 	public:
 		static constexpr int exponent(int bit)
 		{
-			return -fractional_bits + util::min(integer_bits, 0) - offset + bit;
+			return -fractional_bits - offset + bit;
 		}
 
 		static constexpr int max_exponent()
