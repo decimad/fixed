@@ -5,6 +5,8 @@
 
 #include <fixed/fixed.hpp>
 
+#define CA constexpr auto
+
 void storage_type_test() {
 	constexpr fix::sfixed<31, 0> value_int32(0);
 	static_assert(std::is_same< decltype(value_int32)::value_type, int >::value, "Wrong storage type");
@@ -184,16 +186,40 @@ void scaling_shift_test()
 	
 //	constexpr auto val = value.scaling_shift<1>();
 }
-
+/*
 void div_test() {
 	using nom = fix::sfixed<10, 12>;
 	using den = fix::sfixed<2, 27>;
 	
 	constexpr auto some = fix::div<>(nom::from(-3.113), den::from(-0.0000001423));
 
-	constexpr auto result = fix::div</*fix::fits<3,5>,*/ fix::positive, fix::rounding::zero, fix::max_size<32>>(nom::from(-3.213), den::from(-0.001523));
+	constexpr auto result = fix::div<fix::positive, fix::rounding::zero, fix::max_size<32>>(nom::from(-3.213), den::from(-0.001523));
 	//static_assert(std::is_same<std::decay_t<decltype(result)>, fix::ufixed<3, 5>>::value, "Foooo!");
 	constexpr auto value = result.to<double>();
+}
+*/
+
+void div_test2() {
+	using namespace fix;
+	constexpr auto nom = integer_range<16000000000ull>(999982000ull);
+	constexpr auto den = integer_range<16000000000ull>(1000051886ull);
+
+	using nom_type = std::decay_t<decltype(nom)>;
+	using den_type = std::decay_t<decltype(den)>;
+
+	using div_diag = detail::div_struct< meta::list<fits<1, 31>, positive>, nom_type, den_type >;
+
+	CA shift_nom = div_diag::shift_nom;
+	CA shift_den = div_diag::shift_den;
+	
+	CA shifted_nom = nom.scaling_shift<shift_nom>();
+	CA shifted_den = den.scaling_shift<shift_den>();
+
+	CA result_f = div_diag::result_f;
+	CA result_i = div_diag::result_i;
+	
+	constexpr auto result = div<fits<1,31>, positive>(nom, den);
+	CA result_val = result.to<double>();
 }
 
 
@@ -229,7 +255,7 @@ void add_test()
 	constexpr auto value = sum.to<double>();
 }
 
-#define CA constexpr auto
+
 
 void sub_test()
 {

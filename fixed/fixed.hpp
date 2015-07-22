@@ -572,9 +572,21 @@ namespace fix {
 	}
 
 	template< typename T >
-	constexpr fixed<sizeof(T) * 8, 0, std::is_signed<T>::value> integer(T value)
+	constexpr auto integer(T value)
 	{
 		return fixed<sizeof(T) * 8, 0, std::is_signed<T>::value>(value);
+	}
+
+	template< int ConstrainedBits, typename T >
+	constexpr auto integer_bits(T value)
+	{
+		return fixed<ConstrainedBits, 0, std::is_signed<T>::value>(value);
+	}
+
+	template<int64 ConstrainedMax, int64 ConstrainedMin=0, typename T>
+	constexpr auto integer_range(T value)
+	{
+		return fixed<util::integer_bits_interval(ConstrainedMax, ConstrainedMin), 0, std::is_signed<T>::value>(value);
 	}
 
 }
