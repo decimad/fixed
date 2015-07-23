@@ -73,8 +73,11 @@ namespace fix {
 			using precast_type = typename std::conditional< (sizeof(destination_value_type)>sizeof(ValueType)) && (Shift > 0), destination_value_type, ValueType >::type;
 			using postcast_type = destination_value_type;
 
+			static constexpr int precast_bits = sizeof(precast_type) * 8;
+			static constexpr int free_bits = precast_bits - original_type::data_bits;
+
 			using result_type = fixed<
-				I - util::max<int>(Shift - original_type::free_bits, 0),
+				I - util::max<int>(Shift - free_bits, 0),
 				F + util::min<int>(Shift + int(O), 0),
 				S,
 				util::max<int>(Shift + int(O), 0),
@@ -190,9 +193,15 @@ namespace fix {
 			return exponent(offset);
 		}
 
+		template< typename T >
+		constexpr auto to_type() const
+		{
+			return fixed<integer_bits + ((!Signed && std::is_signed<T>::value) ? 1 : 0), fractional_bits, std::is_signed<T>::value, offset, T>(value);
+		}
+
 		template< int Shift >
 		constexpr auto virtual_shift() const {
-			return fixed<integer_bits + Shift, fractional_bits - Shift, offset>(value);
+			return fixed<integer_bits + Shift, fractional_bits - Shift, Signed, offset>(value);
 		}
 
 		template< int Shift >
@@ -491,6 +500,7 @@ namespace fix {
 
 			// Check for maximum bitcount in intermediates
 			static constexpr int max_size = meta::find_if_or< ArgList, max_size_finder, platform_max_size>::type::value;
+			static constexpr bool max_size_constrained = !std::is_same< typename meta::find_if<ArgList, max_size_finder>::type, meta::void_type >::value;
 
 			static_assert(max_size <= platform_max_size::value, "You are exceeding the platform's maximum bitcount.");
 		};
@@ -510,7 +520,7 @@ namespace fix {
 			// Collect template arguments
 			using parsed_args = add_sub_args< ArgList >;
 
-			static constexpr int max_size = parsed_args::max_size;
+			static constexpr int max_size = parsed_args::max_size_constrained ? parsed_args::max_size : sizeof(typename auto_type<AT, BT>::type)*8;
 			using result_range = typename parsed_args::result_range;
 
 			constexpr static bool i_constrained = parsed_args::constrained_integer;
@@ -522,18 +532,25 @@ namespace fix {
 			constexpr static int a_shift_preliminary = util::max( exponent_difference, 0) + util::min(B::offset - A::offset, 0);
 			constexpr static int b_shift_preliminary = util::max(-exponent_difference, 0) + util::min(A::offset - B::offset, 0);
 
+			constexpr static bool RS_sum = parsed_args::assume_result_positive ? false : (AS || BS);
+			// if not otherwise expressed by an argument, always assume signed destination range for subtraction
+			constexpr static bool RS_sub = parsed_args::assume_result_positive ? false : true;
+
+			//
+			constexpr static int a_sign_extension = (!AS && BS) ? 1 : 0;
+			constexpr static int b_sign_extension = (!BS && AS) ? 1 : 0;
+
+			using a_extended_type = typename std::conditional<(!AS && BS), typename std::make_signed<typename A::value_type>::type, typename A::value_type>::type;
+			using b_extended_type = typename std::conditional<(!BS && AS), typename std::make_signed<typename B::value_type>::type, typename B::value_type>::type;
+			
 			// If either side is overshooting the maximum bit size, shift both down accordingly
-			constexpr static int overshoot  = util::max(util::max((A::low_bits + a_shift_preliminary) - max_size, (B::low_bits + b_shift_preliminary) - max_size), 0);
+			constexpr static int overshoot  = util::max(util::max((A::low_bits + a_shift_preliminary + a_sign_extension) - max_size, (B::low_bits + b_shift_preliminary + b_sign_extension) - max_size), 0);
 
 			// If custom-dest fraction bits lead to a negative offset, shift both up accordingly 
 			constexpr static int undershoot = f_constrained ? (-util::min(A::radix_pos + a_shift_preliminary - overshoot - result_range::fraction_bits, 0)) : (0);
 
 			constexpr static int a_shift = a_shift_preliminary - overshoot + undershoot;
 			constexpr static int b_shift = b_shift_preliminary - overshoot + undershoot;
-
-			constexpr static bool RS_sum = parsed_args::assume_result_positive ? false : (AS || BS);
-			// if not otherwise expressed by an argument, always assume signed destination range for subtraction
-			constexpr static bool RS_sub = parsed_args::assume_result_positive ? false : true;
 
 			// need to find out result-type
 			using shifted_a_type = typename A::template scaling_shifted_type<a_shift>;
@@ -542,19 +559,22 @@ namespace fix {
 			static_assert(shifted_a_type::exponent(0) == shifted_b_type::exponent(0), "My calculations were wrong");
 			static_assert(shifted_a_type::low_bits <= max_size && shifted_b_type::low_bits <= max_size, "Could not fit the calculation.");
 
-			static constexpr int result_i = i_constrained ?  result_range::integer_bits  : util::max(shifted_a_type::integer_bits, shifted_b_type::integer_bits   );
-			static constexpr int result_f = f_constrained ?  result_range::fraction_bits : util::max(shifted_a_type::fractional_bits, shifted_b_type::fractional_bits);
+			static constexpr int result_i = i_constrained ?  result_range::integer_bits  : (util::max(shifted_a_type::integer_bits + a_sign_extension, shifted_b_type::integer_bits + b_sign_extension));
+			static constexpr int result_f = f_constrained ?  result_range::fraction_bits : (util::max(shifted_a_type::fractional_bits, shifted_b_type::fractional_bits));
 			static constexpr int result_o = f_constrained ? (shifted_a_type::radix_pos-result_f) : util::min(shifted_a_type::offset, shifted_b_type::offset);
 
 			using sub_result_type = fixed<result_i, result_f, RS_sub, result_o>;
 			using add_result_type = fixed<result_i, result_f, RS_sum, result_o>;
+
+			using sub_result_value_type = typename sub_result_type::value_type;
+			using add_result_value_type = typename add_result_type::value_type;
 
 			constexpr static add_result_type add(A a, B b) {
 				return add_result_type(a.template scaling_shift<a_shift>().value + b.template scaling_shift<b_shift>().value);
 			}
 
 			constexpr static sub_result_type sub(A a, B b) {
-				return sub_result_type(a.template scaling_shift<a_shift>().value - b.template scaling_shift<b_shift>().value);
+				return sub_result_type(a.template to_type<sub_result_value_type>().template scaling_shift<a_shift>().value - b.template to_type<sub_result_value_type>().template scaling_shift<b_shift>().value);
 			}
 		};
 	}
@@ -587,6 +607,25 @@ namespace fix {
 	constexpr auto integer_range(T value)
 	{
 		return fixed<util::integer_bits_interval(ConstrainedMax, ConstrainedMin), 0, std::is_signed<T>::value>(value);
+	}
+
+	// default operators (no args to ops)
+	template< typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO >
+	constexpr auto operator+(fixed<AI, AF, AS, AO, AT> a, fixed<BI, BF, BS, BO, BT> b)
+	{
+		return add<>(a, b);
+	}
+
+	template< typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO >
+	constexpr auto operator-(fixed<AI, AF, AS, AO, AT> a, fixed<BI, BF, BS, BO, BT> b)
+	{
+		return sub<>(a, b);
+	}
+
+	template< typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO >
+	constexpr auto operator*(fixed<AI, AF, AS, AO, AT> a, fixed<BI, BF, BS, BO, BT> b)
+	{
+		return mul<>(a, b);
 	}
 
 }

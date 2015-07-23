@@ -19,7 +19,7 @@ namespace fix {
 		constexpr typename std::enable_if<std::is_integral<T>::value, T>::type
 			exp2(unsigned int exponent)
 		{
-			return 1 << exponent;
+			return T(1) << exponent;
 		}
 
 		template<typename T>

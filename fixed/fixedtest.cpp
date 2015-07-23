@@ -5,7 +5,86 @@
 
 #include <fixed/fixed.hpp>
 
+template< int I >
+constexpr auto sine_normalize(fix::sfixed<I, 0> angle)
+{
+	return angle; //(((angle.value << 1) ^ angle.value) < 0) ? (fix::sfixed<I, 0>((1 << (I - 1)) - angle)) : angle;
+}
+
+template< int I, int F >
+constexpr auto sine3_1stq(fix::sfixed<I, F> angle)
+{
+	// "taylor": 1/2 * angle * (3 - angle*angle)
+	// wasting a bit, since the lib doesnt know that angle is always [-1 ... +1] (maybe add max/min to the type?) :(
+	return (angle * (FIXED_INTEGER(3) - angle*angle)).virtual_shift<-1>();
+}
+
+template< int I >
+constexpr auto sine3(fix::sfixed<I, 0> angle)
+{
+	return sine3_1stq(angle.virtual_shift<-I+1>());
+}
+
 #define CA constexpr auto
+
+void sine_test2()
+{
+	using namespace fix;
+	CA angle = sfixed<12, 0>(222);
+	CA angle_val = angle.virtual_shift<-23>().to<double>() * 90;
+	CA val = sine3(angle);		// type is sfixed 3.13
+	CA conv = val.to<double>();
+}
+
+
+
+void sine_test()
+{
+	using namespace fix;
+
+	CA angle = sfixed<12, 0>(1024);
+	CA norm = angle.virtual_shift<-11>();
+	CA norm_square = mul<>(norm, norm);
+	CA test = norm_square.to<double>();
+
+	CA three = FIXED_INTEGER(3);
+	
+	using sub_diag = detail::add_sub_struct< meta::list<>, ufixed<2, 0>, sfixed<2, 14>>;
+	CA constrained = sub_diag::parsed_args::max_size_constrained;
+	CA f_constrained = sub_diag::parsed_args::constrained_fraction;
+	CA result_f    = sub_diag::result_f;
+	CA max_size    = sub_diag::max_size;
+	CA overshoot   = sub_diag::overshoot;
+	CA a_extend    = sub_diag::a_sign_extension;
+	CA a_shift     = sub_diag::a_shift;
+	CA b_shift     = sub_diag::b_shift;
+	using sa_type = sub_diag::shifted_a_type;
+	using sb_type = sub_diag::shifted_b_type;
+	using result_type = sub_diag::sub_result_type;
+
+	using extended_type = sub_diag::sub_result_value_type;
+
+	CA three_extended = three.to_type<extended_type>();
+	CA norm_square_extended = norm_square.to_type<extended_type>();
+
+	using shift_diag = detail::scaling_shift_values<std::decay_t<decltype(three_extended)>, a_shift>;
+	CA free = shift_diag::original_type::free_bits;
+	
+	CA a_shifted = three.to_type      <sub_diag::sub_result_value_type>().scaling_shift<a_shift>();
+	CA a_shifted_value = a_shifted.to<double>();
+
+	CA b_shifted = norm_square.to_type<sub_diag::sub_result_value_type>().scaling_shift<b_shift>();
+	CA b_shifted_value = b_shifted.to<double>();
+
+	CA subresult = result_type(a_shifted.value - b_shifted.value);
+	CA testat = subresult.to<double>();
+
+	CA test2 = sub<>(FIXED_INTEGER(3), norm_square);
+	CA test2_value = test2.to<double>();
+
+	CA val = sine3(angle);
+	CA conv = val.to<double>();
+}
 
 void storage_type_test() {
 	constexpr fix::sfixed<31, 0> value_int32(0);
