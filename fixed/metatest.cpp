@@ -5,10 +5,15 @@
 
 
 #include "fixedmeta.hpp"
+#include <fixed/fixed.hpp>
 
 template< int a, int b >
 struct some_template {};
 
+
+
 void meta_test()
 {
+	using namespace fix;
+
 }

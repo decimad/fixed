@@ -7,6 +7,7 @@
 #define UTIL_FIXEDMATH_HPP__
 
 #include <limits>
+#include <fixed/fixedutil.hpp>
 
 namespace fix {
 
@@ -155,30 +156,6 @@ namespace fix {
 		constexpr bool is_power_of_2(T value)
 		{
 			return exp2<T>(log2_floor(safe_abs(value))) == safe_abs(value);
-		}
-
-		template<typename T>
-		constexpr T max(T lhs, T rhs)
-		{
-			return (lhs > rhs) ? lhs : rhs;
-		}
-
-		template<typename T, typename... Args>
-		constexpr T max(T t1, T t2, T t3, Args&&... t)
-		{
-			return max(max(t1, t2), t3, t...);
-		}
-
-		template<typename T>
-		constexpr T min(T lhs, T rhs)
-		{
-			return (lhs > rhs) ? rhs : lhs;
-		}
-
-		template<typename T, typename... Args>
-		constexpr T min(T t1, T t2, T t3, Args... t)
-		{
-			return min(min(t1, t2), t3, t...);
 		}
 
 		constexpr int binary_digits(double decimal)

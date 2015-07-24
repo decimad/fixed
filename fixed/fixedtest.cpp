@@ -125,7 +125,13 @@ void storage_type_test() {
 void macro_test()
 {
 	using namespace fix;
-	
+
+//	using blah = fix::detail::fitting_type_t<unsigned int, short>;
+
+	CA value54 = util::saturate(unsigned int(64000), short(-120), short(120));
+
+
+
 	CA val2 = util::range_bits(32767, -32768);
 
 	constexpr auto size_value = FIXED_CONSTANT(2.45, 32);	// Given result size

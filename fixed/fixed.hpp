@@ -53,8 +53,6 @@ namespace fix {
 			return typename std::conditional<value == std::numeric_limits<T>::max(), promoted_t<T>, T>::type(value);
 		}
 
-
-
 		template< typename T1, typename T2 >
 		struct fitting_type {
 			using type = typename std::conditional<  
@@ -127,6 +125,18 @@ namespace fix {
 			static constexpr ValueType min = min_value<util::min(Bits,1),Signed, ValueType>();
 			static constexpr ValueType max = max_value<util::min(Bits,1),Signed, ValueType>();
 		};
+
+		template< typename Range, typename Limits >
+		struct saturate_range;
+
+		template< typename RangeT, RangeT RangeMin, RangeT RangeMax, typename LimitsT, LimitsT LimitsMin, LimitsT LimitsMax >
+		struct saturate_range< value_range<RangeT, RangeMin, RangeMax>, value_range<LimitsT, LimitsMin, LimitsMax> >
+		{
+			using type = typename value_range< RangeT, util::saturate(RangeMin, LimitsMin, LimitsMax), util::saturate(RangeMax, LimitsMin, LimitsMax) >::min_range_type;
+		};
+
+		template< typename Range, typename Limits >
+		using saturate_range_t = typename saturate_range< Range, Limits >::type;
 
 	}
 
@@ -647,11 +657,18 @@ namespace fix {
 		template< typename RangeA, typename RangeB >
 		using sub_result_type = detail::value_type_t<
 			util::min<int>(
-				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type))*8+1,
+				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type))*8,
 				64
 				), true>;
 
-		template< typename RangeA, typename RangeB, typename result_type = sub_result_type<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB >
+		using sub_temporary_type = detail::value_type_t<
+			util::min<int>(
+				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type)) * 8 + 1,
+				64
+				), true>;
+
+		template< typename RangeA, typename RangeB, typename result_type = sub_temporary_type<RangeA, RangeB> >
 		struct max_sub_result {
 			SC auto value = util::max(
 				result_type(RangeA::max) - RangeB::max,
@@ -661,7 +678,7 @@ namespace fix {
 				);
 		};
 
-		template< typename RangeA, typename RangeB, typename result_type = sub_result_type<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB, typename result_type = sub_temporary_type<RangeA, RangeB> >
 		struct min_sub_result {
 			SC auto value = util::min(
 				result_type(RangeA::max) - RangeB::max,
@@ -726,12 +743,13 @@ namespace fix {
 			using b_range = typename shifted_b_type::range_type;
 
 			using auto_result_range = value_range <
-				sub_result_type<a_range, b_range>,
+				sub_temporary_type<a_range, b_range>,
 				min_sub_result<a_range, b_range>::value,
 				max_sub_result<a_range, b_range>::value
 			>;
 
-			using temporary_type = typename auto_result_range::value_type;
+			using sub_result_range = detail::saturate_range_t<auto_result_range, a_range>;
+			using sub_temporary_value_type = typename sub_result_range::value_type;
 
 			using sub_result_value_type = typename auto_result_range::min_type;
 			static constexpr int sub_result_bits = auto_result_range::bits;
@@ -754,7 +772,7 @@ namespace fix {
 			}
 
 			constexpr static sub_result_type_t sub(A a, B b) {
-				return sub_result_type_t(temporary_type(a.template scaling_shift<a_shift>().value) - temporary_type(b.template scaling_shift<b_shift>().value));
+				return sub_result_type_t(sub_temporary_value_type(a.template scaling_shift<a_shift>().value) - sub_temporary_value_type(b.template scaling_shift<b_shift>().value));
 			}
 		};
 	}
