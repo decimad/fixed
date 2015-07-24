@@ -126,20 +126,10 @@ void macro_test()
 {
 	using namespace fix;
 
-//	using blah = fix::detail::fitting_type_t<unsigned int, short>;
-
-	CA value54 = util::saturate(unsigned int(64000), short(-120), short(120));
-
-
-
-	CA val2 = util::range_bits(32767, -32768);
-
 	constexpr auto size_value = FIXED_CONSTANT(2.45, 32);	// Given result size
 	constexpr auto prec_value = FIXED_CONSTANT_P(2.45, 8);	// Given result precision
 
 	using range_p_value_type = FIXED_RANGE_P(-2.45, 10.45, 5);
-
-	CA value = unsigned short(util::abs(short(-32768)));
 
 	CA bits3 = util::integer_bits(-32768);
 
@@ -477,7 +467,3 @@ void mul_test()
 	constexpr auto result_value = result.to<double>();
 }
 
-int main()
-{
-
-}

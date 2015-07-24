@@ -3,8 +3,8 @@
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
 
-#ifndef UTIL_FIXEDMATH_HPP__
-#define UTIL_FIXEDMATH_HPP__
+#ifndef FIXED_FIXEDMATH_HPP__
+#define FIXED_FIXEDMATH_HPP__
 
 #include <limits>
 #include <fixed/fixedutil.hpp>

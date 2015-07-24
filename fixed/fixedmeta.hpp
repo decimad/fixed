@@ -3,8 +3,8 @@
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
 
-#ifndef UTIL_FIXED_META_HPP__
-#define UTIL_FIXED_META_HPP__
+#ifndef FIXED_FIXEDMETA_HPP__
+#define FIXED_FIXEDMETA_HPP__
 
 #include <type_traits>
 
