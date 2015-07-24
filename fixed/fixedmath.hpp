@@ -456,7 +456,7 @@ namespace fix {
 			scaled_exp2(T value, int exponent)
 		{
 			return (exponent >= 0) ? 
-				(detail::floating_round_switch<Mode>::round(value * exp2<int64>(exponent))) : (value / exp2<int64>(-exponent));
+				(detail::floating_round_switch<Mode>::round(value * exp2<util::largest_unsigned_type>(exponent))) : (value / exp2<util::largest_unsigned_type>(-exponent));
 		}
 
 		template<RoundModes Mode = RoundModes::Floor, typename T>
@@ -508,6 +508,18 @@ namespace fix {
 			static constexpr int value = util::max(min_bits, max_bits) + ((min < 0 || max < 0) ? 1 : 0);
 		};
 
+
+		template<typename T>
+		constexpr bool is_neg(T val) {
+			return !std::is_unsigned<T>::value && (val < 0);
+		}
+
+		template<typename T1, typename T2>
+		constexpr bool any_neg(T1 val1, T2 val2)
+		{
+			return is_neg(val1) || is_neg(val2);
+		}
+
 		//
 		// Supporting Macros
 		//
@@ -542,14 +554,26 @@ namespace fix {
 			integer_bits(T value)
 		{
 			//     simple log2 of the integer part     if signed we need a bit more         if value is positive and matches a power, we need one more again
-			return integer_bits(static_cast<int64>(value));
+			return integer_bits(static_cast<largest_signed_type>(value));
 		}
+
+		namespace detail {
+
+			constexpr int range_bits_impl( int bits_a, bool a_neg, int bits_b, bool b_neg )
+			{
+				return ((bits_a >= bits_b) ? ((!a_neg && b_neg) ? (bits_a + 1) : bits_a) :
+											 ((!b_neg && a_neg) ? (bits_b + 1) : bits_b))
+						+ ((a_neg || b_neg) ? 1 : 0);
+			}
+
+		}
+
 
 		template<typename S, typename U>
 		constexpr int range_bits(S s, U u)
 		{
 			// FIXME: sign handling is not correct
-			return ((integer_bits(s) == integer_bits(u)) && ((s<0 && u>=0)|| (s>=0 && u<0))) ? (integer_bits(s)+1) : max(integer_bits(s), integer_bits(u));
+			return detail::range_bits_impl(integer_bits(s), is_neg(s), integer_bits(u), is_neg(u));
 		}
 
 	}

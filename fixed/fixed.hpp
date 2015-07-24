@@ -84,7 +84,7 @@ namespace fix {
 		template< int I, int F, bool Signed, typename T>
 		constexpr auto to_fixed(T value)
 		{
-			return static_cast<value_type_t<I + F, Signed>>(util::scaled_exp2<RoundModes::Floor>(value, F));
+			return static_cast<value_type_t<I + F, Signed>>(util::scaled_exp2<util::RoundModes::Floor>(value, F));
 		}
 	}
 
@@ -110,13 +110,13 @@ namespace fix {
 		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed>>
 		constexpr ValueType max_value()
 		{
-			return Signed ? util::bitmask<ValueType>(Bits-1) : util::bitmask<ValueType>(Bits);
+			return Signed ? ValueType(util::bitmask<typename std::make_unsigned<ValueType>::type>(Bits-1)) : ValueType(util::bitmask<ValueType>(Bits));
 		}
 
 		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed> >
 		constexpr ValueType min_value()
 		{
-			return Signed ? (~util::bitmask<ValueType>(Bits-1)) : ValueType(0);
+			return Signed ? ValueType(~util::bitmask<typename std::make_unsigned<ValueType>::type>(Bits-1)) : ValueType(0);
 		}
 
 		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed> >
@@ -345,10 +345,10 @@ namespace fix {
 
 	};
 
-	template< int I, int F, typename RangeType = detail::auto_fixed_range<I + F, true> >
+	template< int I, int F, typename RangeType = detail::auto_fixed_range<I + F, false> >
 	using ufixed = fixed<I, F, false, 0, detail::value_type_t<I+F, false>, RangeType>;
 
-	template< int I, int F, typename RangeType = detail::auto_fixed_range<I+F, true> >
+	template< int I, int F, typename RangeType = detail::auto_fixed_range<I + F, true> >
 	using sfixed = fixed<I, F, true, 0, detail::value_type_t<I+F,true>, RangeType>;
 
 	template< int I, int F, bool S, typename R >
@@ -743,7 +743,7 @@ namespace fix {
 			static constexpr int result_f = f_constrained ?  result_range::fraction_bits : (shifted_a_type::radix_pos);
 			static constexpr int result_o = f_constrained ? (shifted_a_type::radix_pos-result_f) : util::min(shifted_a_type::offset, shifted_b_type::offset);
 
-			using sub_result_type = fixed_auto<result_i, result_f, auto_result_range::is_signed, typename auto_result_range::min_range_type>;
+			using sub_result_type_t = fixed_auto<result_i, result_f, auto_result_range::is_signed, typename auto_result_range::min_range_type>;
 			using add_result_type = fixed<result_i, result_f, RS_sum, result_o>;
 
 			//using sub_result_value_type = typename sub_result_type::value_type;
@@ -753,8 +753,8 @@ namespace fix {
 				return add_result_type(a.template scaling_shift<a_shift>().value + b.template scaling_shift<b_shift>().value);
 			}
 
-			constexpr static sub_result_type sub(A a, B b) {
-				return sub_result_type(temporary_type(a.template scaling_shift<a_shift>().value) - temporary_type(b.template scaling_shift<b_shift>().value));
+			constexpr static sub_result_type_t sub(A a, B b) {
+				return sub_result_type_t(temporary_type(a.template scaling_shift<a_shift>().value) - temporary_type(b.template scaling_shift<b_shift>().value));
 			}
 		};
 	}
@@ -821,19 +821,19 @@ namespace fix {
 
 // internal macro
 #define FIXED_RANGE_FROM_VALS(I,F,A,B) \
-	::fix::value_range<::fix::detail::value_type_t<(I)+(F), ((A)<0 || (B)<0)>, ::fix::detail::to_fixed<I,F,((A)<0||(B)<0)>(A), ::fix::detail::to_fixed<I,F,((A)<0||(B)<0)>(B)>::min_range_type
+	typename ::fix::value_range<::fix::detail::value_type_t<(I)+(F), ::fix::util::any_neg(A,B)>, ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B)>(A), ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B)>(B)>::min_range_type
 
 // fixed type of reals ranging from A to B with given fraction bits (precision)
 #define FIXED_RANGE_P(A,B,Precision) \
-	::fix::fixed_auto<::fix::util::range_bits(A,B), (Precision), ((A)<0 || (B)<0), FIXED_RANGE_FROM_VALS(::fix::util::range_bits(A,B), Precision, A, B) >
+	::fix::fixed_auto<::fix::util::range_bits(A,B), (Precision), ::fix::util::any_neg(A,B), FIXED_RANGE_FROM_VALS(::fix::util::range_bits(A,B), Precision, A, B) >
 
 // fixed type of reals ranging from A to B with given size
 #define FIXED_RANGE(A,B,Size) \
-	::fix::fixed_auto<::fix::util::range_bits(A,B), (Size-::fix::util::range_bits(A,B)), ((A)<0 || (B)<0), FIXED_RANGE_FROM_VALS(::fix::util::range_bits(A,B), (Size-::fix::util::range_bits(A,B)), A, B) >
+	::fix::fixed_auto<::fix::util::range_bits(A,B), (Size-::fix::util::range_bits(A,B)), ::fix::util::any_neg(A,B), FIXED_RANGE_FROM_VALS(::fix::util::range_bits(A,B), (Size-::fix::util::range_bits(A,B)), A, B) >
 
 // fixed type of integers ranging from A to B
 #define FIXED_RANGE_I(A,B) \
-	::fix::fixed_auto< ::fix::util::range_bits(A,B), 0, (A<0 || B<0), FIXED_RANGE_FROM_VALS(::fix::util::range_bits(A,B), 0, A, B) >
+	::fix::fixed_auto< ::fix::util::range_bits(A,B), 0, ::fix::util::any_neg(A,B), FIXED_RANGE_FROM_VALS(::fix::util::range_bits(A,B), 0, A, B) >
 
 // Real constant with given fraction bits
 #define FIXED_CONSTANT_P(A, Precision) \

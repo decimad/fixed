@@ -15,7 +15,7 @@ template< typename FixedType >
 constexpr auto sine3_1stq(FixedType angle)
 {
 	// "taylor": 1/2 * angle * (3 - angle*angle)
-	return (angle * (FIXED_CONSTANT_I(3) - fix::square(angle))).virtual_shift<-1>();
+	return (angle * (FIXED_CONSTANT_I(3) - fix::square(angle))).template virtual_shift<-1>();
 }
 
 template< typename FixedType >
@@ -132,6 +132,16 @@ void macro_test()
 	constexpr auto prec_value = FIXED_CONSTANT_P(2.45, 8);	// Given result precision
 
 	using range_p_value_type = FIXED_RANGE_P(-2.45, 10.45, 5);
+
+	CA bits = util::range_bits(-2.45, 10.45);
+	CA isneg = ::fix::util::any_neg(-2.45, 10.45);
+
+	CA value = (bits) + (32-bits);
+	CA fixed_a = ::fix::detail::to_fixed<bits,32-bits,::fix::util::any_neg(-2.45,10.45)>(-2.45);
+	CA fixed_b = ::fix::detail::to_fixed<bits,32-bits,::fix::util::any_neg(-2.45,10.45)>(10.45);
+
+	using range_type = ::fix::value_range<::fix::detail::value_type_t<(bits)+(32-bits), ::fix::util::any_neg(-2.45,10.45)>, ::fix::detail::to_fixed<bits,32-bits,::fix::util::any_neg(-2.45,10.45)>(-2.45), ::fix::detail::to_fixed<bits,32-bits,::fix::util::any_neg(-2.45,10.45)>(10.45)>::min_range_type
+
 	using range_s_value_type = FIXED_RANGE(-2.45, 10.45, 32);
 
 	constexpr auto conv1 = size_value.to<double>();
@@ -174,8 +184,6 @@ void test_min_max()
 
 	CA teasa = util::log2_ceil(util::abs(minresult));
 	CA bits = util::max( util::log2_ceil(maxresult), util::log2_ceil(minresult) );
-
-	CA asdg = util::integer_bits(INT_MAX);
 }
 
 
