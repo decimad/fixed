@@ -530,42 +530,22 @@ namespace fix {
 		//
 		// Supporting Macros
 		//
-	
-		namespace detail {
-
-			template< typename T >
-			constexpr int integer_bits_inbetween(T value)
-			{
-				return log2_ceil(value + 1);
-			}
-
-
-			template< typename T >
-			constexpr int integer_bits(T value)
-			{
-				return (value == std::numeric_limits<T>::max()) ? (sizeof(T)*8) : integer_bits_inbetween(value);
-			}
-
-		}
-
-		template<typename T>
-		constexpr typename std::enable_if< std::is_integral<T>::value, int>::type
-			integer_bits(T value)
-		{
-			// since we have to work inside the type boundaries, I found no better way.
-			return (value >= 0) ? detail::integer_bits<typename std::make_unsigned<T>::type>(value) : (detail::integer_bits<typename std::make_unsigned<T>::type>(-value));
-		}
-
-		template<typename T>
-		constexpr typename std::enable_if < std::is_floating_point<T>::value, int>::type
-			integer_bits(T value)
-		{
-			//     simple log2 of the integer part     if signed we need a bit more         if value is positive and matches a power, we need one more again
-			return integer_bits(static_cast<largest_signed_type>(value));
-		}
 
 		// If anybody finds a working alternative that is simpler... please forward to me
 		namespace detail {
+
+			template< typename T >
+			constexpr int log2_ceil_incr(T value)
+			{
+				return (value == std::numeric_limits<T>::max()) ? (sizeof(T) * 8 + 1) : log2_ceil(value + 1);
+			}
+
+			template< typename T >
+			constexpr int integer_bits_integral(T value)
+			{
+				using unsigned_t = typename std::make_unsigned<T>::type;
+				return is_neg(value) ? (log2_ceil(abs2(value)) + 1) : log2_ceil_incr(unsigned_t(value));
+			}
 
 			template<typename S, typename U>
 			constexpr int range_bits_integral(S s, U u)
@@ -576,16 +556,18 @@ namespace fix {
 				return
 					(is_neg(s) || is_neg(u)) ?
 					(util::max(
-						is_neg(s) ? log2_ceil(abs2(s)) : log2_ceil(unsigned_s(s) + 1),
-						is_neg(u) ? log2_ceil(abs2(u)) : log2_ceil(unsigned_u(u) + 1))
-						+ 1)
+						is_neg(s) ? log2_ceil(abs2(s)) : log2_ceil_incr(unsigned_s(s)),
+						is_neg(u) ? log2_ceil(abs2(u)) : log2_ceil_incr(unsigned_u(u))
+						)
+						+ 1
+					)
 					:
 					(util::max(
-						log2_ceil(unsigned_s(s) + 1),
-						log2_ceil(unsigned_u(u) + 1))
-						);
+						log2_ceil_incr(unsigned_s(s)),
+						log2_ceil_incr(unsigned_u(u))
+						)
+					);
 			}
-
 
 			template<typename T, bool Value = std::is_integral<T>::value >
 			struct to_integral
@@ -603,6 +585,12 @@ namespace fix {
 		constexpr int range_bits(S s, U u)
 		{
 			return detail::range_bits_integral(detail::to_integral<S>::cast(s), detail::to_integral<U>::cast(u));
+		}
+
+		template<typename T>
+		constexpr int integer_bits(T value)
+		{
+			return detail::integer_bits_integral(detail::to_integral<T>::cast(value));
 		}
 
 	}

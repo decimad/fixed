@@ -135,10 +135,10 @@ void macro_test()
 
 	CA value = unsigned short(util::abs(short(-32768)));
 
-	CA bits3 = util::integer_bits(32768);
+	CA bits3 = util::integer_bits(-32768);
 
 	CA bits  = util::range_bits(-2.45, 10.45);
-	CA bits2 = util::range_bits(32767, -32768);
+	CA bits2 = util::range_bits(1231, -32768);
 
 	CA isneg = ::fix::util::any_neg(-2.45, 10.45);
 
