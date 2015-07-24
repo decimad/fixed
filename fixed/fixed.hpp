@@ -22,14 +22,50 @@
 
 namespace fix {
 
+#define SC static constexpr
+
 	using int64 = long long;
 	using uint64 = unsigned long long;
 
 	//
 	// Value type deduction
 	//
-
+	
 	namespace detail {
+	
+		template< typename T, bool Signed = std::is_signed<T>::value >
+		struct promoted
+		{
+			using bare_type = typename std::conditional< sizeof(T) == 1, short,
+				typename std::conditional< sizeof(T) == 2, int,
+				typename std::conditional< sizeof(T) == 4, int64, int64>::type
+				>::type >::type;
+
+			using type = typename std::conditional< Signed, typename std::make_signed<bare_type>::type, typename std::make_unsigned<bare_type>::type>::type;
+		};
+
+		template< typename T, bool Signed = std::is_signed<T>::value >
+		using promoted_t = typename promoted<T, Signed>::type;
+
+		template< typename T, T value >
+		constexpr auto promote_if_max()
+		{
+			return typename std::conditional<value == std::numeric_limits<T>::max(), promoted_t<T>, T>::type(value);
+		}
+
+
+
+		template< typename T1, typename T2 >
+		struct fitting_type {
+			using type = typename std::conditional<  
+				sizeof(T1) == sizeof(T2) && !(std::is_signed<T1>::value == std::is_signed<T2>::value),
+				promoted_t<T1, true>,
+				typename std::conditional<(sizeof(T1)>sizeof(T2)), T1, T2>::type
+			>::type;
+		};
+
+		template< typename T1, typename T2 >
+		using fitting_type_t = typename fitting_type<T1, T2>::type;
 
 		template< int Bits, bool Signed >
 		struct value_type {
@@ -45,8 +81,52 @@ namespace fix {
 		template< int Bits, bool Signed >
 		using value_type_t = typename value_type<Bits, Signed>::type;
 
+		template< int I, int F, bool Signed, typename T>
+		constexpr auto to_fixed(T value)
+		{
+			return static_cast<value_type_t<I + F, Signed>>(util::scaled_exp2<RoundModes::Floor>(value, F));
+		}
+	}
+
+	template< typename T, T Min, T Max >
+	struct value_range {
+		using value_type = T;
+		SC T min = Min;
+		SC T max = Max;
+		SC bool is_signed = (min < 0) || (max < 0);
+		SC int bits = util::bits_for_range<T, min, max>::value;
+		using min_type       = detail::value_type_t<bits, is_signed>;
+		using min_range_type = value_range<min_type, Min, Max>;
+	};
+	
+#define RANGE_FROM_VALS(A,B) \
+	value_range<detail::fitting_type_t<decltype(A), decltype(B)>, A, B>::min_range_type
+
+	namespace detail {
+
 		template< int I, int F, bool S, int O >
 		using fixed_value_type_t = value_type_t<I+F+O, S>;
+		
+		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed>>
+		constexpr ValueType max_value()
+		{
+			return Signed ? util::bitmask<ValueType>(Bits-1) : util::bitmask<ValueType>(Bits);
+		}
+
+		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed> >
+		constexpr ValueType min_value()
+		{
+			return Signed ? (~util::bitmask<ValueType>(Bits-1)) : ValueType(0);
+		}
+
+		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed> >
+		using auto_fixed_range = value_range<ValueType, min_value<Bits, Signed, ValueType>(), max_value<Bits, Signed, ValueType >()>;
+
+		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed>>
+		struct minmax {
+			static constexpr ValueType min = min_value<util::min(Bits,1),Signed, ValueType>();
+			static constexpr ValueType max = max_value<util::min(Bits,1),Signed, ValueType>();
+		};
 
 	}
 
@@ -54,7 +134,7 @@ namespace fix {
 	// Shifting support
 	//
 
-	template< int IntegerBits, int FractionalBits, bool Signed = true, int Offset = 0, typename ValueType = detail::fixed_value_type_t< IntegerBits, FractionalBits, Signed, Offset >>
+	template < int I, int F, bool S = true, int O = 0, typename ValueType = detail::value_type_t<I + F + O, S>, typename Range = detail::auto_fixed_range<I+F+O, S> >
 	class fixed;
 
 	namespace detail {
@@ -63,10 +143,10 @@ namespace fix {
 		template< typename OriginalType, int Shift >
 		struct scaling_shift_values;
 
-		template< int I, int F, bool S, int O, typename ValueType, int Shift >
-		struct scaling_shift_values< fixed<I, F, S, O, ValueType>, Shift >
+		template< int I, int F, bool S, int O, typename ValueType, typename Range, int Shift >
+		struct scaling_shift_values< fixed<I, F, S, O, ValueType, Range>, Shift >
 		{
-			using original_type = fixed<I, F, S, O, ValueType>;
+			using original_type = fixed<I, F, S, O, ValueType, Range>;
 			using destination_value_type = fixed_value_type_t< I, F+util::min(O+Shift,0), S, util::max(O + Shift, 0) >;
 
 			// We can potentially be much smarter here...
@@ -81,7 +161,8 @@ namespace fix {
 				F + util::min<int>(Shift + int(O), 0),
 				S,
 				util::max<int>(Shift + int(O), 0),
-				destination_value_type
+				destination_value_type,
+				value_range<destination_value_type, util::shifted(destination_value_type(Range::min), Shift), util::shifted(destination_value_type(Range::max), Shift)>
 			>;
 		};
 
@@ -110,48 +191,53 @@ namespace fix {
 	// fixed type
 	//
 
-	template<int IntegerBits, int FractionalBits, bool Signed, int Offset, typename ValueType>
+	template<int I, int F, bool S, int O, typename ValueType, typename RangeType>
 	class fixed {
 	public:
 		// The offset might be a waste of effort. It was supposed to set apart irrelevant bits
 		// at the LSBs after an up-shift from significant bits.
 				
 		using value_type  = ValueType;
+		using range_type = RangeType;
 		
 		// If we set up the template argument as unsigned, we would have to cast everywhere
 		// becaue C promotes to unsigned...
-		static_assert(Offset >= 0, "Offset must be equal or larger than 0");
+		static_assert(O >= 0, "Offset must be equal or larger than 0");
 
 		// some handy constants
-		
-		static constexpr int value_bits = static_cast<int>(sizeof(value_type) * 8);
+		SC bool is_signed = S;
+
+		SC int value_bits = static_cast<int>(sizeof(value_type) * 8);
 
 		// number of integer bits
-		static constexpr int integer_bits = IntegerBits;
+		SC int integer_bits = I;
 		
+		// if we're having a signed X.0 type, then >> unsigned bits only leaves the sign in front of the radix point
+		SC int unsigned_bits = (is_signed) ? (integer_bits - 1) : integer_bits;
+
 		// number of fractional bits
-		static constexpr int fractional_bits = FractionalBits;
+		SC int fractional_bits = F;
 		
 		// number of offset bits at the least significant bits
-		static constexpr int offset = Offset;
+		SC int offset = O;
 
 		// position of radix point. note that this can very well be negative.
-		static constexpr int radix_pos = fractional_bits + offset;
+		SC int radix_pos = fractional_bits + offset;
 
 		// number of significant bits
-		static constexpr int data_bits = integer_bits + fractional_bits;
+		SC int data_bits = integer_bits + fractional_bits;
 
 		// numer of bits used for integer, fractional and offset
-		static constexpr int low_bits = data_bits + offset;
+		SC int low_bits = data_bits + offset;
 
 		// number of unused bits at the most significant digits
-		static constexpr int free_bits = value_bits - low_bits;
+		SC int free_bits = value_bits - low_bits;
 		
 		// scaling (exp2) which needs to be applied to value to shift the fractional digit before the LSB (ie. to extract the integer-part), !not! considering offset
-		static constexpr int scaling = -fractional_bits;
+		SC int scaling = -fractional_bits;
 
 		// the maximum positive scaling shift which can be applied without promotion
-		static constexpr int max_shift = (Signed) ? util::min(free_bits - 1, 0) : free_bits;
+		SC int max_shift = (S) ? util::min(free_bits - 1, 0) : free_bits;
 
 		value_type value;
 
@@ -164,10 +250,10 @@ namespace fix {
 		{}
 
 
-		template< int Off, typename T >
-		fixed& operator=(fixed<IntegerBits, FractionalBits, Signed, Off, T> other)
+		template<int Off, typename T, typename R>
+		fixed& operator=(fixed<I, F, S, Off, T, R> other)
 		{
-			value = other.scaling_shift<Offset - Off>().value;
+			value = other.scaling_shift<offset - Off>().value;
 			return *this;
 		}
 		
@@ -196,12 +282,22 @@ namespace fix {
 		template< typename T >
 		constexpr auto to_type() const
 		{
-			return fixed<integer_bits + ((!Signed && std::is_signed<T>::value) ? 1 : 0), fractional_bits, std::is_signed<T>::value, offset, T>(value);
+			return fixed<integer_bits + ((!is_signed && std::is_signed<T>::value) ? 1 : 0), fractional_bits, std::is_signed<T>::value, offset, T, range_type>(value);
 		}
 
 		template< int Shift >
 		constexpr auto virtual_shift() const {
-			return fixed<integer_bits + Shift, fractional_bits - Shift, Signed, offset>(value);
+			return fixed<integer_bits + Shift, fractional_bits - Shift, S, offset, value_type, range_type>(value);
+		}
+
+		static constexpr fixed max()
+		{
+			return fixed(static_cast<value_type>(range_type::max));
+		}
+
+		static constexpr fixed min()
+		{
+			return fixed(static_cast<value_type>(range_type::min));
 		}
 
 		template< int Shift >
@@ -224,36 +320,39 @@ namespace fix {
 		{
 		}
 		
-		template< typename RoundingWrapper = rounding::floor, typename S >
-		constexpr static fixed from(S value)
+		template< typename RoundingWrapper = rounding::floor, typename U >
+		constexpr static fixed from(U value)
 		{
 			// Need to be more sophisticated here... detect powers of 2 and such which make negative integers or fractions possible (for constants)
 			return
 				//( util::test_overflow<value_type, data_bits>(util::round(util::scaled_exp2(value, -scaling))) ) ?
-				fixed(static_cast<value_type>(util::scaled_exp2<S, RoundingWrapper::value>(value, -scaling)) << offset) /*: (throw std::logic_error("Out of Bounds."))*/;
+				fixed(static_cast<value_type>(util::scaled_exp2<RoundingWrapper::value>(value, -scaling)) << offset) /*: (throw std::logic_error("Out of Bounds."))*/;
 		}
 
-		template<typename S, typename RoundingWrapper = rounding::floor>
-		constexpr typename std::enable_if<std::is_floating_point<S>::value, S>::type
+		template<typename U, typename RoundingWrapper = rounding::floor>
+		constexpr typename std::enable_if<std::is_floating_point<U>::value, U>::type
 			to() const
 		{
-			return util::scaled_exp2<S, RoundingWrapper::value>(value >> offset, scaling);
+			return util::scaled_exp2<RoundingWrapper::value, U>(value >> offset, scaling);
 		}
 
-		template<typename S, typename RoundingWrapper = rounding::floor>
-		constexpr typename std::enable_if<std::is_integral<S>::value, S>::type
+		template<typename U, typename RoundingWrapper = rounding::floor>
+		constexpr typename std::enable_if<std::is_integral<U>::value, U>::type
 			to() const
 		{
-			return util::scaled_exp2<S, RoundingWrapper::value>(value >> offset, scaling);
+			return util::scaled_exp2<RoundingWrapper::value, U>(value >> offset, scaling);
 		}
 
 	};
 
-	template< int I, int F >
-	using ufixed = fixed<I, F, false>;
+	template< int I, int F, typename RangeType = detail::auto_fixed_range<I + F, true> >
+	using ufixed = fixed<I, F, false, 0, detail::value_type_t<I+F, false>, RangeType>;
 
-	template< int I, int F >
-	using sfixed = fixed<I, F, true>;
+	template< int I, int F, typename RangeType = detail::auto_fixed_range<I+F, true> >
+	using sfixed = fixed<I, F, true, 0, detail::value_type_t<I+F,true>, RangeType>;
+
+	template< int I, int F, bool S, typename R >
+	using fixed_auto = ::fix::fixed<I, F, S, 0, ::fix::detail::value_type_t<I + F, S>, R>;
 
 	template< int I, int F = std::numeric_limits<int>::max() >
 	struct fits {
@@ -339,10 +438,10 @@ namespace fix {
 		template< typename Args, typename Nom, typename Denom >
 		struct div_struct;
 
-		template< typename Args, typename NomT, int NomI, int NomF, bool NomS, int NomO, typename DenT, int DenI, int DenF, bool DenS, int DenO >
-		struct div_struct< Args, fixed<NomI,NomF,NomS,NomO, NomT>, fixed<DenI, DenF, DenS, DenO, DenT>>  {
-			using nom_type = fixed<NomI, NomF, NomS, NomO, NomT>;
-			using den_type = fixed<DenI, DenF, DenS, DenO, DenT>;
+		template< typename Args, typename NomT, int NomI, int NomF, bool NomS, int NomO, typename NomR, typename DenT, int DenI, int DenF, bool DenS, int DenO, typename DenR >
+		struct div_struct< Args, fixed<NomI,NomF,NomS,NomO, NomT, NomR>, fixed<DenI, DenF, DenS, DenO, DenT, DenR>>  {
+			using nom_type = fixed<NomI, NomF, NomS, NomO, NomT, NomR>;
+			using den_type = fixed<DenI, DenF, DenS, DenO, DenT, DenR>;
 			using parsed_args = div_args<Args>;
 
 			using auto_result_value_type = typename auto_type<NomT, DenT>::type;
@@ -377,10 +476,10 @@ namespace fix {
 		};
 	}
 
-	template< typename... Args, typename NomT, int NomI, int NomF, bool NomS, int NomO, typename DenT, int DenI, int DenF, bool DenS, int DenO>
-	constexpr auto div(fixed<NomI, NomF, NomS, NomO, NomT> nom, fixed<DenI, DenF, DenS, DenO, DenT> den)
+	template< typename... Args, typename NomT, int NomI, int NomF, bool NomS, int NomO, typename NomR, typename DenT, int DenI, int DenF, bool DenS, int DenO, typename DenR>
+	constexpr auto div(fixed<NomI, NomF, NomS, NomO, NomT, NomR> nom, fixed<DenI, DenF, DenS, DenO, DenT, DenR> den)
 	{
-		return detail::div_struct<meta::list<Args...>, fixed<NomI, NomF, NomS, NomO, NomT>, fixed<DenI, DenF, DenS, DenO, DenT>>::divide(nom, den);
+		return detail::div_struct<meta::list<Args...>, fixed<NomI, NomF, NomS, NomO, NomT, NomR>, fixed<DenI, DenF, DenS, DenO, DenT, DenR>>::divide(nom, den);
 	}
 
 	//
@@ -409,13 +508,39 @@ namespace fix {
 			static_assert(max_size <= platform_max_size::value, "You are exceeding your platform's maximum bitcount.");
 		};
 
+		template< typename RangeA, typename RangeB >
+		using mul_result_type = detail::value_type_t<(sizeof(typename RangeA::value_type) + sizeof(typename RangeB::value_type)) * 8, std::is_signed<typename RangeA::value_type>::value || std::is_signed<typename RangeB::value_type>::value >;
+
+		template< typename RangeA, typename RangeB, typename result_type = mul_result_type<RangeA, RangeB> >
+		struct max_mul_result {
+			SC auto value = util::max(
+				result_type(RangeA::max) * RangeB::max,
+				result_type(RangeA::max) * RangeB::min,
+				result_type(RangeA::min) * RangeB::max,
+				result_type(RangeA::min) * RangeB::min
+				);
+		};
+
+		template< typename RangeA, typename RangeB, typename result_type = mul_result_type<RangeA,RangeB> >
+		struct min_mul_result {
+			SC auto value = util::min(
+				result_type(RangeA::max) * RangeB::max,
+				result_type(RangeA::max) * RangeB::min,
+				result_type(RangeA::min) * RangeB::max,
+				result_type(RangeA::min) * RangeB::min
+				);
+		};
+
+		template< typename RangeA, typename RangeB >
+		using mul_result_range = value_range< mul_result_type<RangeA, RangeB>, min_mul_result<RangeA, RangeB>::value, max_mul_result<RangeA, RangeB>::value >;
+
 		template< typename Args, typename Nom, typename Denom >
 		struct mul_struct;
 
-		template< typename Args, typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO >
-		struct mul_struct< Args, fixed<AI, AF, AS, AO, AT>, fixed<BI, BF, BS, BO, BT>> {
-			using a_type = fixed<AI, AF, AS, AO, AT>;
-			using b_type = fixed<BI, BF, BS, BO, BT>;
+		template< typename Args, typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
+		struct mul_struct< Args, fixed<AI, AF, AS, AO, AT, AR>, fixed<BI, BF, BS, BO, BT, BR>> {
+			using a_type = fixed<AI, AF, AS, AO, AT, AR>;
+			using b_type = fixed<BI, BF, BS, BO, BT, BR>;
 			using parsed_args = mul_args<Args>;
 			
 			// the result range possibly specified by fits<A(,B)>
@@ -423,17 +548,22 @@ namespace fix {
 
 			// the automatic result value type, if not otherwise constrained by user
 			using result_value_type = typename auto_type<AT, BT>::type;
+			using range = mul_result_range<AR, BR>;
 
-			static constexpr int  auto_i = AI + BI;
-			static constexpr bool auto_s = AS || BS;
+			static constexpr bool assume_positive = parsed_args::assume_result_positive;
+
+			//static constexpr int  auto_i = AI + BI;
+			static constexpr bool stripped_sign = (AS || BS) && assume_positive;
+			static constexpr bool auto_s = (AS || BS) && (!assume_positive);
+
+			SC int auto_i = range::bits - AF - BF - AO - BO - (stripped_sign ? 1 : 0);
 
 			static constexpr int result_i = parsed_args::constrained_integer ? result_range::integer_bits : auto_i;
 			static constexpr int auto_f   = int(sizeof(result_value_type) * 8) - result_i;
 			static constexpr int result_f = parsed_args::constrained_fraction ? result_range::fraction_bits : auto_f;
 
 			static constexpr int max_size = parsed_args::max_size;
-			static constexpr bool assume_positive = parsed_args::assume_result_positive;
-
+	
 			// Check to see if temporary overshoots the maximum given bitcount
 			static constexpr int overshoot = util::max(AI + AF + AO + BI + BF + BO - max_size, 0);
 			
@@ -455,7 +585,13 @@ namespace fix {
 
 			static constexpr int result_shift = result_radix_pos - mul_result_radix_pos;
 
-			using result_type = fixed<result_i, result_f, auto_s && !assume_positive>;
+			using range_value_type = typename range::value_type;
+			static constexpr auto result_min = (assume_positive && range::min < 0) ? range_value_type(0) : (util::shifted(range::min, result_shift));
+			static constexpr auto result_max = util::shifted(range::max, result_shift);
+
+			using result_range_type = typename value_range<range_value_type, result_min, result_max>::min_range_type;
+
+			using result_type = fixed_auto<result_i, result_f, auto_s && !assume_positive, result_range_type>;
 
 			// should not assert ever, at least if the user doesn't give I and F and a max_size which doesn't fit them.
 			static_assert(result_i + result_f <= max_size, "Cannot multiply with given constraints.");
@@ -463,20 +599,23 @@ namespace fix {
 			static constexpr result_type mul(a_type a, b_type b)
 			{
 				return result_type( static_cast<typename result_type::value_type>(
-					util::scaled_exp2<mul_result_value_type, parsed_args::rounding>(
+					util::scaled_exp2<parsed_args::rounding, mul_result_value_type>(
 						mul_result_value_type(a.template scaling_shift<a_shift>().value) * b.template scaling_shift<b_shift>().value,
 						result_shift)
 					) );
 			}
 		};
+
 	}
 
-	template< typename... Args, typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO>
-	constexpr auto mul(fixed<AI, AF, AS, AO, AT> a, fixed<BI, BF, BS, BO, BT> b)
+	template< typename... Args, typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR>
+	constexpr auto mul(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
 	{
-		return detail::mul_struct<meta::list<Args...>, fixed<AI, AF, AS, AO, AT>, fixed<BI, BF, BS, BO, BT>>::mul(a, b);
+		return detail::mul_struct<meta::list<Args...>, fixed<AI, AF, AS, AO, AT, AR>, fixed<BI, BF, BS, BO, BT, BR>>::mul(a, b);
 	}
 
+#define DEBUG_MUL( A, B, ... ) \
+	::fix::detail::mul_struct< ::fix::meta::list< __VA_ARGS__ >,  std::decay_t<decltype(A)>, std::decay_t<decltype(B)> >
 
 	//
 	// Sum / Difference
@@ -505,19 +644,45 @@ namespace fix {
 			static_assert(max_size <= platform_max_size::value, "You are exceeding the platform's maximum bitcount.");
 		};
 
+		template< typename RangeA, typename RangeB >
+		using sub_result_type = detail::value_type_t<
+			util::min<int>(
+				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type))*8+1,
+				64
+				), true>;
+
+		template< typename RangeA, typename RangeB, typename result_type = sub_result_type<RangeA, RangeB> >
+		struct max_sub_result {
+			SC auto value = util::max(
+				result_type(RangeA::max) - RangeB::max,
+				result_type(RangeA::max) - RangeB::min,
+				result_type(RangeA::min) - RangeB::max,
+				result_type(RangeA::min) - RangeB::min
+				);
+		};
+
+		template< typename RangeA, typename RangeB, typename result_type = sub_result_type<RangeA, RangeB> >
+		struct min_sub_result {
+			SC auto value = util::min(
+				result_type(RangeA::max) - RangeB::max,
+				result_type(RangeA::max) - RangeB::min,
+				result_type(RangeA::min) - RangeB::max,
+				result_type(RangeA::min) - RangeB::min
+				);
+		};
+
 		template< typename ArgList, typename A, typename B >
 		struct add_sub_struct;
 
 		// Find the best combination of shifts so the fractional points are aligned,
 		// minimizing shift operations but only if no precision is lost
-		template< typename ArgList, int AI, int AF, bool AS, int AO, typename AT, int BI, int BF, bool BS, int BO, typename BT >
-		struct add_sub_struct< ArgList, fixed<AI, AF, AS, AO, AT>, fixed<BI, BF, BS, BO, BT> >
+		template< typename ArgList, int AI, int AF, bool AS, int AO, typename AT, typename AR, int BI, int BF, bool BS, int BO, typename BT, typename BR >
+		struct add_sub_struct< ArgList, fixed<AI, AF, AS, AO, AT, AR>, fixed<BI, BF, BS, BO, BT, BR> >
 		{
 			// This is a mess!
-			using A = fixed<AI, AF, AS, AO, AT>;
-			using B = fixed<BI, BF, BS, BO, BT>;
+			using A = fixed<AI, AF, AS, AO, AT, AR>;
+			using B = fixed<BI, BF, BS, BO, BT, BR>;
 
-			// Collect template arguments
 			using parsed_args = add_sub_args< ArgList >;
 
 			static constexpr int max_size = parsed_args::max_size_constrained ? parsed_args::max_size : sizeof(typename auto_type<AT, BT>::type)*8;
@@ -556,17 +721,32 @@ namespace fix {
 			using shifted_a_type = typename A::template scaling_shifted_type<a_shift>;
 			using shifted_b_type = typename B::template scaling_shifted_type<b_shift>;
 
+			// need to find out result-range
+			using a_range = typename shifted_a_type::range_type;
+			using b_range = typename shifted_b_type::range_type;
+
+			using auto_result_range = value_range <
+				sub_result_type<a_range, b_range>,
+				min_sub_result<a_range, b_range>::value,
+				max_sub_result<a_range, b_range>::value
+			>;
+
+			using temporary_type = typename auto_result_range::value_type;
+
+			using sub_result_value_type = typename auto_result_range::min_type;
+			static constexpr int sub_result_bits = auto_result_range::bits;
+
 			static_assert(shifted_a_type::exponent(0) == shifted_b_type::exponent(0), "My calculations were wrong");
 			static_assert(shifted_a_type::low_bits <= max_size && shifted_b_type::low_bits <= max_size, "Could not fit the calculation.");
 
-			static constexpr int result_i = i_constrained ?  result_range::integer_bits  : (util::max(shifted_a_type::integer_bits + a_sign_extension, shifted_b_type::integer_bits + b_sign_extension));
-			static constexpr int result_f = f_constrained ?  result_range::fraction_bits : (util::max(shifted_a_type::fractional_bits, shifted_b_type::fractional_bits));
+			static constexpr int result_i = i_constrained ?  result_range::integer_bits  : (sub_result_bits - shifted_a_type::radix_pos);
+			static constexpr int result_f = f_constrained ?  result_range::fraction_bits : (shifted_a_type::radix_pos);
 			static constexpr int result_o = f_constrained ? (shifted_a_type::radix_pos-result_f) : util::min(shifted_a_type::offset, shifted_b_type::offset);
 
-			using sub_result_type = fixed<result_i, result_f, RS_sub, result_o>;
+			using sub_result_type = fixed_auto<result_i, result_f, auto_result_range::is_signed, typename auto_result_range::min_range_type>;
 			using add_result_type = fixed<result_i, result_f, RS_sum, result_o>;
 
-			using sub_result_value_type = typename sub_result_type::value_type;
+			//using sub_result_value_type = typename sub_result_type::value_type;
 			using add_result_value_type = typename add_result_type::value_type;
 
 			constexpr static add_result_type add(A a, B b) {
@@ -574,21 +754,24 @@ namespace fix {
 			}
 
 			constexpr static sub_result_type sub(A a, B b) {
-				return sub_result_type(a.template to_type<sub_result_value_type>().template scaling_shift<a_shift>().value - b.template to_type<sub_result_value_type>().template scaling_shift<b_shift>().value);
+				return sub_result_type(temporary_type(a.template scaling_shift<a_shift>().value) - temporary_type(b.template scaling_shift<b_shift>().value));
 			}
 		};
 	}
 
-	template< typename... Args, typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO >
-	constexpr auto add(fixed<AI, AF, AS, AO, AT> a, fixed<BI, BF, BS, BO, BT> b)
+#define DEBUG_ADD_SUB( A, B, ... ) \
+	::fix::detail::add_sub_struct< ::fix::meta::list< __VA_ARGS__ >,  std::decay_t<decltype(A)>, std::decay_t<decltype(B)> >
+
+	template< typename... Args, typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
+	constexpr auto add(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
 	{
 		return detail::add_sub_struct< meta::list<Args...>, decltype(a), decltype(b) >::add(a, b);
 	}
 
-	template< typename... Args, typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO >
-	constexpr auto sub(fixed<AI, AF, AS, AO, AT> a, fixed<BI, BF, BS, BO, BT> b)
+	template< typename... Args, typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
+	constexpr auto sub(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
 	{
-		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AO, AT>, fixed<BI, BF, BS, BO, BT> >::sub(a, b);
+		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AO, AT, AR>, fixed<BI, BF, BS, BO, BT, BR> >::sub(a, b);
 	}
 
 	template< typename T >
@@ -606,49 +789,62 @@ namespace fix {
 	template<int64 ConstrainedMax, int64 ConstrainedMin=0, typename T>
 	constexpr auto integer_range(T value)
 	{
-		return fixed<util::integer_bits_interval(ConstrainedMax, ConstrainedMin), 0, std::is_signed<T>::value>(value);
+		return fixed<util::bits_for_range<int64, ConstrainedMax, ConstrainedMin>::value, 0, std::is_signed<T>::value>(value);
 	}
 
 	// default operators (no args to ops)
-	template< typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO >
-	constexpr auto operator+(fixed<AI, AF, AS, AO, AT> a, fixed<BI, BF, BS, BO, BT> b)
+	template < typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR>
+	constexpr auto operator+(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
 	{
 		return add<>(a, b);
 	}
 
-	template< typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO >
-	constexpr auto operator-(fixed<AI, AF, AS, AO, AT> a, fixed<BI, BF, BS, BO, BT> b)
+	template< typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
+	constexpr auto operator-(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
 	{
 		return sub<>(a, b);
 	}
 
-	template< typename AT, int AI, int AF, bool AS, int AO, typename BT, int BI, int BF, bool BS, int BO >
-	constexpr auto operator*(fixed<AI, AF, AS, AO, AT> a, fixed<BI, BF, BS, BO, BT> b)
+	template< typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
+	constexpr auto operator*(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
 	{
 		return mul<>(a, b);
 	}
 
+	template< typename FixedType >
+	constexpr auto square(FixedType val)
+	{
+		return mul<positive>(val, val);
+	}
+
 }
 
-#define FIXED_TYPE_S(Value, Size) \
-	::fix::fixed<::fix::util::integer_bits(Value), Size-::fix::util::integer_bits(Value), (Value<0)>
+// internal macro
+#define FIXED_RANGE_FROM_VALS(I,F,A,B) \
+	::fix::value_range<::fix::detail::value_type_t<(I)+(F), ((A)<0 || (B)<0)>, ::fix::detail::to_fixed<I,F,((A)<0||(B)<0)>(A), ::fix::detail::to_fixed<I,F,((A)<0||(B)<0)>(B)>::min_range_type
 
-#define FIXED_TYPE_P(Value, Precision) \
-	::fix::fixed<::fix::util::integer_bits(Value), Precision, (Value<0)>
+// fixed type of reals ranging from A to B with given fraction bits (precision)
+#define FIXED_RANGE_P(A,B,Precision) \
+	::fix::fixed_auto<::fix::util::range_bits(A,B), (Precision), ((A)<0 || (B)<0), FIXED_RANGE_FROM_VALS(::fix::util::range_bits(A,B), Precision, A, B) >
 
-#define FIXED_VALUE_S(Value, Size) \
-	FIXED_TYPE_S(Value, Size)::from(Value)
+// fixed type of reals ranging from A to B with given size
+#define FIXED_RANGE(A,B,Size) \
+	::fix::fixed_auto<::fix::util::range_bits(A,B), (Size-::fix::util::range_bits(A,B)), ((A)<0 || (B)<0), FIXED_RANGE_FROM_VALS(::fix::util::range_bits(A,B), (Size-::fix::util::range_bits(A,B)), A, B) >
 
-#define FIXED_VALUE_P(Value, Precision) \
-	FIXED_TYPE_P(Value, Precision)::from(Value)
+// fixed type of integers ranging from A to B
+#define FIXED_RANGE_I(A,B) \
+	::fix::fixed_auto< ::fix::util::range_bits(A,B), 0, (A<0 || B<0), FIXED_RANGE_FROM_VALS(::fix::util::range_bits(A,B), 0, A, B) >
 
-#define FIXED_INTEGER(Value) \
-	FIXED_VALUE_P(Value, 0)
+// Real constant with given fraction bits
+#define FIXED_CONSTANT_P(A, Precision) \
+	FIXED_RANGE_P(A,A,Precision)::from(A)
 
-#define FIXED_RANGE_TYPE_S(Min, Max, Size) \
-	::fix::fixed<::fix::util::integer_bits_interval(Min,Max), Size - ::fix::util::integer_bits_interval(Min,Max), (Min < 0 || Max < 0)>
+// Integer constant
+#define FIXED_CONSTANT_I(A) \
+	FIXED_RANGE_P(A,A,0)::from(A)
 
-#define FIXED_RANGE_TYPE_P(Min, Max, Precision) \
-	::fix::fixed<::fix::util::integer_bits_interval(Min,Max), Precision, (Min < 0 || Max < 0)>
+// Real constant with given size
+#define FIXED_CONSTANT(A, Size) \
+	FIXED_RANGE(A,A,Size)::from(A)
 
 #endif

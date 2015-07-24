@@ -11,18 +11,17 @@ constexpr auto sine_normalize(fix::sfixed<I, 0> angle)
 	return angle; //(((angle.value << 1) ^ angle.value) < 0) ? (fix::sfixed<I, 0>((1 << (I - 1)) - angle)) : angle;
 }
 
-template< int I, int F >
-constexpr auto sine3_1stq(fix::sfixed<I, F> angle)
+template< typename FixedType >
+constexpr auto sine3_1stq(FixedType angle)
 {
 	// "taylor": 1/2 * angle * (3 - angle*angle)
-	// wasting a bit, since the lib doesnt know that angle is always [-1 ... +1] (maybe add max/min to the type?) :(
-	return (angle * (FIXED_INTEGER(3) - angle*angle)).virtual_shift<-1>();
+	return (angle * (FIXED_CONSTANT_I(3) - fix::square(angle))).virtual_shift<-1>();
 }
 
-template< int I >
-constexpr auto sine3(fix::sfixed<I, 0> angle)
+template< typename FixedType >
+constexpr auto sine3(FixedType angle)
 {
-	return sine3_1stq(angle.virtual_shift<-I+1>());
+	return sine3_1stq(angle);
 }
 
 #define CA constexpr auto
@@ -30,60 +29,89 @@ constexpr auto sine3(fix::sfixed<I, 0> angle)
 void sine_test2()
 {
 	using namespace fix;
-	CA angle = sfixed<12, 0>(222);
-	CA angle_val = angle.virtual_shift<-23>().to<double>() * 90;
-	CA val = sine3(angle);		// type is sfixed 3.13
+	CA angle = FIXED_RANGE(-1.0, 1.0, 16)::from(0.1);
+	CA angle_integer = angle.integer_bits;
+	
+	CA angle_max = angle.max().to<double>();
+	CA angle_min = angle.min().to<double>();
+
+	CA angle_norm = angle.virtual_shift<0>();
+
+	CA angle_norm_max = angle_norm.max().to<double>();
+	CA angle_norm_min = angle_norm.min().to<double>();
+
+	CA squared = square(angle_norm);
+
+	CA squared_max = squared.max().to<double>();
+	CA squared_min = squared.min().to<double>();
+	
+	CA value = FIXED_CONSTANT_I(3) - fix::square(angle_norm);
+	CA integer = value.integer_bits;
+	CA fraction = value.fractional_bits;
+	CA diff_min = value.min().to<double>();
+	CA diff_max = value.max().to<double>();
+
+	CA result = (angle_norm * value).virtual_shift<-1>();
+	CA result_integer = result.integer_bits;
+	CA result_fraction = result.fractional_bits;
+	CA result_max = result.max();
+	CA result_max_val = result_max.to<double>();
+	CA result_min = result.min();
+	CA result_min_val = result_min.to<double>();
+
+	CA angle_val = angle_norm.to<double>() * 90;
+	CA val = sine3(angle);
+	CA result_bits = val.integer_bits;
 	CA conv = val.to<double>();
+}
+
+void range_mul_test()
+{
+	using namespace fix;
+	CA angle = sfixed<12, 0, value_range<short, -2047, 2047>>::from(-2047).virtual_shift<-11>();
+	CA product = angle * angle * angle * angle;
+	CA value = product.to<double>();
 }
 
 
 
-void sine_test()
+void bits_for_range_test()
 {
 	using namespace fix;
 
-	CA angle = sfixed<12, 0>(1024);
-	CA norm = angle.virtual_shift<-11>();
-	CA norm_square = mul<>(norm, norm);
-	CA test = norm_square.to<double>();
-
-	CA three = FIXED_INTEGER(3);
+	static_assert(util::bits_for_range<unsigned short,      0, 65535>::value == 16, "Fooo!");
+	static_assert(util::bits_for_range<         short, -32768, 32767>::value == 16, "Fooo!");
+	static_assert(util::bits_for_range<           int, -32768, 32768>::value == 17, "Fooo!");
 	
-	using sub_diag = detail::add_sub_struct< meta::list<>, ufixed<2, 0>, sfixed<2, 14>>;
-	CA constrained = sub_diag::parsed_args::max_size_constrained;
-	CA f_constrained = sub_diag::parsed_args::constrained_fraction;
-	CA result_f    = sub_diag::result_f;
-	CA max_size    = sub_diag::max_size;
-	CA overshoot   = sub_diag::overshoot;
-	CA a_extend    = sub_diag::a_sign_extension;
-	CA a_shift     = sub_diag::a_shift;
-	CA b_shift     = sub_diag::b_shift;
-	using sa_type = sub_diag::shifted_a_type;
-	using sb_type = sub_diag::shifted_b_type;
-	using result_type = sub_diag::sub_result_type;
+	static_assert(detail::auto_fixed_range< 1, true>::bits == 1, "Foo!");
+	static_assert(detail::auto_fixed_range< 2, true>::bits == 2, "Foo!");
+	static_assert(detail::auto_fixed_range< 3, true>::bits == 3, "Foo!");
+	static_assert(detail::auto_fixed_range< 8, true>::bits == 8, "Foo!");
+	static_assert(detail::auto_fixed_range<16, true>::bits == 16, "Foo!");
+	static_assert(detail::auto_fixed_range<32, true>::bits == 32, "Foo!");
 
-	using extended_type = sub_diag::sub_result_value_type;
+	CA bits1 = util::bits_for_range<short, -16192, 0>::value;
 
-	CA three_extended = three.to_type<extended_type>();
-	CA norm_square_extended = norm_square.to_type<extended_type>();
+	using range_type = RANGE_FROM_VALS(-3232, 5136);
+	CA bits = range_type::bits;
+	using min_type = range_type::min_type;
+	constexpr min_type Foo = 233;
 
-	using shift_diag = detail::scaling_shift_values<std::decay_t<decltype(three_extended)>, a_shift>;
-	CA free = shift_diag::original_type::free_bits;
+	using my_type = FIXED_RANGE_I(-32768, 32767);
+
+	CA minval = my_type::range_type::min;
+	CA maxval = my_type::range_type::max;
+
+	//CA asdga = ::fix::util::integer_bits_interval(64.4231, -64.4231);
 	
-	CA a_shifted = three.to_type      <sub_diag::sub_result_value_type>().scaling_shift<a_shift>();
-	CA a_shifted_value = a_shifted.to<double>();
+	CA intbits = util::integer_bits(68000.4231);
 
-	CA b_shifted = norm_square.to_type<sub_diag::sub_result_value_type>().scaling_shift<b_shift>();
-	CA b_shifted_value = b_shifted.to<double>();
+	CA constant = FIXED_CONSTANT_I(68000);
+	CA bits2 = decltype(constant)::range_type::bits;
+	CA F = decltype(constant)::fractional_bits;
 
-	CA subresult = result_type(a_shifted.value - b_shifted.value);
-	CA testat = subresult.to<double>();
+	CA value = constant.to<double>();
 
-	CA test2 = sub<>(FIXED_INTEGER(3), norm_square);
-	CA test2_value = test2.to<double>();
-
-	CA val = sine3(angle);
-	CA conv = val.to<double>();
 }
 
 void storage_type_test() {
@@ -96,15 +124,60 @@ void storage_type_test() {
 
 void macro_test()
 {
-	constexpr auto size_value = FIXED_VALUE_S(2.45, 32);	// Given result size
-	constexpr auto prec_value = FIXED_VALUE_P(2.45, 8);		// Given result precision
+	using namespace fix;
+	
+	CA val2 = util::range_bits(32767, -32768);
 
-	using range_p_value_type = FIXED_RANGE_TYPE_P(-2.45, 10.45, 5);
-	using range_s_value_type = FIXED_RANGE_TYPE_S(-2.45, 10.45, 32);
+	constexpr auto size_value = FIXED_CONSTANT(2.45, 32);	// Given result size
+	constexpr auto prec_value = FIXED_CONSTANT_P(2.45, 8);	// Given result precision
+
+	using range_p_value_type = FIXED_RANGE_P(-2.45, 10.45, 5);
+	using range_s_value_type = FIXED_RANGE(-2.45, 10.45, 32);
 
 	constexpr auto conv1 = size_value.to<double>();
 	constexpr auto conv2 = prec_value.to<double>();
 }
+
+template< typename FixedA, typename FixedB >
+constexpr auto max_mul_integer_bits(FixedA a, FixedB b)
+{
+
+}
+
+void test_min_max()
+{
+	using namespace fix;
+	using type_a = sfixed<32, 0>;
+	using type_b = sfixed<32, 0>;
+	
+	using result_type = detail::value_type_t<type_a::data_bits + type_b::data_bits, type_a::is_signed || type_b::is_signed>;
+
+	CA amax = type_a::max();
+	CA amin = type_a::min();
+
+	CA bmax = type_b::max();
+	CA bmin = type_b::min();
+
+	CA maxresult = util::max(
+		result_type(type_a::max().value) * type_b::max().value,
+		result_type(type_a::max().value) * type_b::min().value,
+		result_type(type_a::min().value) * type_b::max().value,
+		result_type(type_a::min().value) * type_b::min().value 
+		);
+
+	CA minresult = util::min(
+		result_type(type_a::max().value) * type_b::max().value,
+		result_type(type_a::max().value) * type_b::min().value,
+		result_type(type_a::min().value) * type_b::max().value,
+		result_type(type_a::min().value) * type_b::min().value
+		);
+
+	CA teasa = util::log2_ceil(util::abs(minresult));
+	CA bits = util::max( util::log2_ceil(maxresult), util::log2_ceil(minresult) );
+
+	CA asdg = util::integer_bits(INT_MAX);
+}
+
 
 void from_floating_rounding_test()
 {
@@ -386,4 +459,9 @@ void mul_test()
 	//                                result > 0     9 int bits   restrict to 32 bit temporary (pre-mult rounding!)
 	constexpr auto result = mul<fits<22,10>>(a, b);
 	constexpr auto result_value = result.to<double>();
+}
+
+int main()
+{
+
 }

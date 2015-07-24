@@ -156,10 +156,22 @@ namespace fix {
 			return (lhs > rhs) ? lhs : rhs;
 		}
 
+		template<typename T, typename... Args>
+		constexpr T max(T t1, T t2, T t3, Args&&... t)
+		{
+			return max(max(t1, t2), t3, t...);
+		}
+
 		template<typename T>
 		constexpr T min(T lhs, T rhs)
 		{
 			return (lhs > rhs) ? rhs : lhs;
+		}
+
+		template<typename T, typename... Args>
+		constexpr T min(T t1, T t2, T t3, Args... t)
+		{
+			return min(min(t1, t2), t3, t...);
 		}
 
 		constexpr int binary_digits(double decimal)
@@ -167,10 +179,18 @@ namespace fix {
 			return static_cast<int>(ceil(3.3219280948873623478703194294894 * decimal));
 		}
 
+		namespace detail {
+			template<typename T>
+			constexpr T bitmask2(int bits) {
+				return ((bits < sizeof(T) * 8) ? ((T(1) << bits) - 1) : T(-1));
+			}
+		}
+
 		template<typename T>
 		constexpr T bitmask(int bits)
 		{
-			return (bits < sizeof(T) * 8) ? ((T(1) << bits) - 1) : T(-1);
+			// to prevent warnings
+			return (bits <= 0) ? 0 : detail::bitmask2<T>(bits);
 		}
 
 		namespace detail {
@@ -431,14 +451,15 @@ namespace fix {
 		// (Fixme: is the usage of rounding here really intuitive?)
 		//
 
-		template< typename T, RoundModes Mode = RoundModes::Floor >
+		template< RoundModes Mode = RoundModes::Floor, typename T >
 		constexpr typename std::enable_if<std::is_floating_point<T>::value, T>::type
 			scaled_exp2(T value, int exponent)
 		{
-			return ((exponent >= 0) ? detail::floating_round_switch<Mode>::round(value * exp2<T>(exponent)) : (value / exp2<T>(-exponent)));
+			return (exponent >= 0) ? 
+				(detail::floating_round_switch<Mode>::round(value * exp2<int64>(exponent))) : (value / exp2<int64>(-exponent));
 		}
 
-		template< typename T, RoundModes Mode = RoundModes::Floor >
+		template<RoundModes Mode = RoundModes::Floor, typename T>
 		constexpr typename std::enable_if<std::is_integral<T>::value, T>::type
 			scaled_exp2(T value, int exponent)
 		{
@@ -448,21 +469,87 @@ namespace fix {
 				(detail::integral_round_switch<Mode>::round(value, -exponent) >> (-exponent));
 		}
 
+		namespace detail {
+		
+			template< typename T, T Value, T Min, T Max, bool Signed = std::is_signed<T>::value >
+			struct bits_for_value_helper
+			{
+				static constexpr int value = util::log2_ceil(util::abs(Value + 1));
+			};
+
+			template< typename T, T Value, T Min, bool Signed >
+			struct bits_for_value_helper< T, Value, Min, Value, Signed >
+			{
+				static constexpr int value = sizeof(T) * 8 - (Signed ? 1 : 0);
+			};
+
+			template< typename T, T Value, T Max >
+			struct bits_for_value_helper< T, Value, Value, Max, true >
+			{
+				static constexpr int value = sizeof(T) * 8 - 1;
+			};
+		
+		}
+
+		template<typename T, T Value>
+		struct bits_for_value {
+			static constexpr int value = detail::bits_for_value_helper<T, Value, std::numeric_limits<T>::min(), std::numeric_limits<T>::max()>::value;
+		};
+
+		template<typename T, T a, T b>
+		struct bits_for_range
+		{
+			static constexpr T min = util::min(a, b);
+			static constexpr T max = util::max(a, b);
+
+			static constexpr int min_bits = bits_for_value<T, min>::value;
+			static constexpr int max_bits = bits_for_value<T, max>::value;
+
+			static constexpr int value = util::max(min_bits, max_bits) + ((min < 0 || max < 0) ? 1 : 0);
+		};
+
 		//
 		// Supporting Macros
 		//
-		template<typename S>
-		constexpr unsigned int integer_bits(S value)
+	
+		namespace detail {
+
+			template< typename T >
+			constexpr int integer_bits_inbetween(T value)
+			{
+				return log2_ceil(abs(value + 1)) + ((value < 0) ? 1 : 0);
+			}
+
+
+			template< typename T >
+			constexpr int integer_bits(T value)
+			{
+				return (value == std::numeric_limits<T>::max() || (std::is_signed<T>::value && value == std::numeric_limits<T>::min())) ? (sizeof(T)*8) : integer_bits_inbetween(value);
+			}
+
+		}
+
+		template<typename T>
+		constexpr typename std::enable_if< std::is_integral<T>::value, int>::type
+			integer_bits(T value)
+		{
+			// since we have to work inside the type boundaries, I found no better way.
+			return (value >= 0) ? detail::integer_bits<typename std::make_unsigned<T>::type>((value)) : detail::integer_bits(value);
+		}
+
+		template<typename T>
+		constexpr typename std::enable_if < std::is_floating_point<T>::value, int>::type
+			integer_bits(T value)
 		{
 			//     simple log2 of the integer part     if signed we need a bit more         if value is positive and matches a power, we need one more again
-			return log2_ceil(trunc(abs(value))) + ((value < 0) ? 1 : 0) + ((value > 0 && is_power_of_2(trunc(value))) ? 1 : 0);
+			return integer_bits(static_cast<int64>(value));
 		}
 
 		template<typename S, typename U>
-		constexpr unsigned int integer_bits_interval(S s, U u)
+		constexpr int range_bits(S s, U u)
 		{
-			// FIXME: sign handling is no correct
-			return util::max(integer_bits(s), integer_bits(u)) + ((s < 0 || u <0) ? 1 : 0);
+			// FIXME: sign handling is not correct
+			return ((integer_bits(s) == integer_bits(u)) && ((s<0 && u>=0)|| (s>=0 && u<0))) ? (integer_bits(s)+1) : max(integer_bits(s), integer_bits(u));
 		}
 
 	}
