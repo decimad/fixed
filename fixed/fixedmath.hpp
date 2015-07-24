@@ -118,6 +118,13 @@ namespace fix {
 		}
 
 		template<typename T>
+		constexpr typename std::enable_if< std::is_integral<T>::value, typename std::make_unsigned<T>::type>::type
+			abs2(T value)
+		{
+			return (value >= 0) ? value : -value;
+		}
+
+		template<typename T>
 		constexpr typename std::enable_if< std::is_integral<T>::value && !std::is_signed<T>::value, T>::type
 			abs(T value)
 		{
@@ -529,14 +536,14 @@ namespace fix {
 			template< typename T >
 			constexpr int integer_bits_inbetween(T value)
 			{
-				return log2_ceil(abs(value + 1)) + ((value < 0) ? 1 : 0);
+				return log2_ceil(value + 1);
 			}
 
 
 			template< typename T >
 			constexpr int integer_bits(T value)
 			{
-				return (value == std::numeric_limits<T>::max() || (std::is_signed<T>::value && value == std::numeric_limits<T>::min())) ? (sizeof(T)*8) : integer_bits_inbetween(value);
+				return (value == std::numeric_limits<T>::max()) ? (sizeof(T)*8) : integer_bits_inbetween(value);
 			}
 
 		}
@@ -546,7 +553,7 @@ namespace fix {
 			integer_bits(T value)
 		{
 			// since we have to work inside the type boundaries, I found no better way.
-			return (value >= 0) ? detail::integer_bits<typename std::make_unsigned<T>::type>((value)) : detail::integer_bits(value);
+			return (value >= 0) ? detail::integer_bits<typename std::make_unsigned<T>::type>(value) : (detail::integer_bits<typename std::make_unsigned<T>::type>(-value));
 		}
 
 		template<typename T>
@@ -557,23 +564,45 @@ namespace fix {
 			return integer_bits(static_cast<largest_signed_type>(value));
 		}
 
+		// If anybody finds a working alternative that is simpler... please forward to me
 		namespace detail {
 
-			constexpr int range_bits_impl( int bits_a, bool a_neg, int bits_b, bool b_neg )
+			template<typename S, typename U>
+			constexpr int range_bits_integral(S s, U u)
 			{
-				return ((bits_a >= bits_b) ? ((!a_neg && b_neg) ? (bits_a + 1) : bits_a) :
-											 ((!b_neg && a_neg) ? (bits_b + 1) : bits_b))
-						+ ((a_neg || b_neg) ? 1 : 0);
+				using unsigned_s = typename std::make_unsigned<S>::type;
+				using unsigned_u = typename std::make_unsigned<U>::type;
+
+				return
+					(is_neg(s) || is_neg(u)) ?
+					(util::max(
+						is_neg(s) ? log2_ceil(abs2(s)) : log2_ceil(unsigned_s(s) + 1),
+						is_neg(u) ? log2_ceil(abs2(u)) : log2_ceil(unsigned_u(u) + 1))
+						+ 1)
+					:
+					(util::max(
+						log2_ceil(unsigned_s(s) + 1),
+						log2_ceil(unsigned_u(u) + 1))
+						);
 			}
 
-		}
 
+			template<typename T, bool Value = std::is_integral<T>::value >
+			struct to_integral
+			{
+				static constexpr T cast(T value) { return value; };
+			};
+
+			template<typename T>
+			struct to_integral<T, false> {
+				static constexpr largest_signed_type cast(T value) { return static_cast<largest_signed_type>(value); }
+			};
+		}
 
 		template<typename S, typename U>
 		constexpr int range_bits(S s, U u)
 		{
-			// FIXME: sign handling is not correct
-			return detail::range_bits_impl(integer_bits(s), is_neg(s), integer_bits(u), is_neg(u));
+			return detail::range_bits_integral(detail::to_integral<S>::cast(s), detail::to_integral<U>::cast(u));
 		}
 
 	}

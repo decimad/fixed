@@ -133,14 +133,16 @@ void macro_test()
 
 	using range_p_value_type = FIXED_RANGE_P(-2.45, 10.45, 5);
 
-	CA bits = util::range_bits(-2.45, 10.45);
+	CA value = unsigned short(util::abs(short(-32768)));
+
+	CA bits3 = util::integer_bits(32768);
+
+	CA bits  = util::range_bits(-2.45, 10.45);
+	CA bits2 = util::range_bits(32767, -32768);
+
 	CA isneg = ::fix::util::any_neg(-2.45, 10.45);
 
-	CA value = (bits) + (32-bits);
-	CA fixed_a = ::fix::detail::to_fixed<bits,32-bits,::fix::util::any_neg(-2.45,10.45)>(-2.45);
-	CA fixed_b = ::fix::detail::to_fixed<bits,32-bits,::fix::util::any_neg(-2.45,10.45)>(10.45);
-
-	using range_type = ::fix::value_range<::fix::detail::value_type_t<(bits)+(32-bits), ::fix::util::any_neg(-2.45,10.45)>, ::fix::detail::to_fixed<bits,32-bits,::fix::util::any_neg(-2.45,10.45)>(-2.45), ::fix::detail::to_fixed<bits,32-bits,::fix::util::any_neg(-2.45,10.45)>(10.45)>::min_range_type
+	using range_type = ::fix::value_range<::fix::detail::value_type_t<(bits)+(32 - bits), ::fix::util::any_neg(-2.45, 10.45)>, ::fix::detail::to_fixed<bits, 32 - bits, ::fix::util::any_neg(-2.45, 10.45)>(-2.45), ::fix::detail::to_fixed<bits, 32 - bits, ::fix::util::any_neg(-2.45, 10.45)>(10.45)>::min_range_type;
 
 	using range_s_value_type = FIXED_RANGE(-2.45, 10.45, 32);
 
