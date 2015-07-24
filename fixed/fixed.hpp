@@ -3,11 +3,10 @@
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
 
-#ifndef UTIL_FIXED_HPP__
-#define UTIL_FIXED_HPP__
+#ifndef FIXED_FIXED_HPP__
+#define FIXED_FIXED_HPP__
 
 #include <type_traits>
-#include <stdexcept>
 #include <fixed/fixedmath.hpp>
 #include <fixed/fixedmeta.hpp>
 
@@ -688,6 +687,40 @@ namespace fix {
 				);
 		};
 
+		template< typename RangeA, typename RangeB >
+		using add_result_type = detail::value_type_t<
+			util::min<int>(
+				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type))*8,
+				64
+				), true>;
+
+		template< typename RangeA, typename RangeB >
+		using add_temporary_type = detail::value_type_t<
+			util::min<int>(
+				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type)) * 8 + 1,
+				64
+				), true>;
+
+		template< typename RangeA, typename RangeB, typename result_type = add_temporary_type<RangeA, RangeB> >
+		struct max_add_result {
+			SC auto value = util::max(
+				result_type(RangeA::max) + RangeB::max,
+				result_type(RangeA::max) + RangeB::min,
+				result_type(RangeA::min) + RangeB::max,
+				result_type(RangeA::min) + RangeB::min
+				);
+		};
+
+		template< typename RangeA, typename RangeB, typename result_type = add_temporary_type<RangeA, RangeB> >
+		struct min_add_result {
+			SC auto value = util::min(
+				result_type(RangeA::max) + RangeB::max,
+				result_type(RangeA::max) + RangeB::min,
+				result_type(RangeA::min) + RangeB::max,
+				result_type(RangeA::min) + RangeB::min
+				);
+		};
+
 		template< typename ArgList, typename A, typename B >
 		struct add_sub_struct;
 
@@ -738,41 +771,55 @@ namespace fix {
 			using shifted_a_type = typename A::template scaling_shifted_type<a_shift>;
 			using shifted_b_type = typename B::template scaling_shifted_type<b_shift>;
 
-			// need to find out result-range
-			using a_range = typename shifted_a_type::range_type;
-			using b_range = typename shifted_b_type::range_type;
-
-			using auto_result_range = value_range <
-				sub_temporary_type<a_range, b_range>,
-				min_sub_result<a_range, b_range>::value,
-				max_sub_result<a_range, b_range>::value
-			>;
-
-			using sub_result_range = detail::saturate_range_t<auto_result_range, a_range>;
-			using sub_temporary_value_type = typename sub_result_range::value_type;
-
-			using sub_result_value_type = typename auto_result_range::min_type;
-			static constexpr int sub_result_bits = auto_result_range::bits;
-
 			static_assert(shifted_a_type::exponent(0) == shifted_b_type::exponent(0), "My calculations were wrong");
 			static_assert(shifted_a_type::low_bits <= max_size && shifted_b_type::low_bits <= max_size, "Could not fit the calculation.");
 
-			static constexpr int result_i = i_constrained ?  result_range::integer_bits  : (sub_result_bits - shifted_a_type::radix_pos);
-			static constexpr int result_f = f_constrained ?  result_range::fraction_bits : (shifted_a_type::radix_pos);
-			static constexpr int result_o = f_constrained ? (shifted_a_type::radix_pos-result_f) : util::min(shifted_a_type::offset, shifted_b_type::offset);
 
-			using sub_result_type_t = fixed_auto<result_i, result_f, auto_result_range::is_signed, typename auto_result_range::min_range_type>;
-			using add_result_type = fixed<result_i, result_f, RS_sum, result_o>;
+			// need to find out result-range
+			using shifted_a_range = typename shifted_a_type::range_type;
+			using shifted_b_range = typename shifted_b_type::range_type;
 
-			//using sub_result_value_type = typename sub_result_type::value_type;
-			using add_result_value_type = typename add_result_type::value_type;
+			using auto_sub_result_range = value_range <
+				sub_temporary_type<shifted_a_range, shifted_b_range>,
+				min_sub_result<shifted_a_range, shifted_b_range>::value,
+				max_sub_result<shifted_a_range, shifted_b_range>::value
+			>;
+
+			using auto_add_result_range = value_range <
+				add_temporary_type<shifted_a_range, shifted_b_range>,
+				min_add_result<shifted_a_range, shifted_b_range>::value,
+				max_add_result<shifted_a_range, shifted_b_range>::value
+			>;
+
+			using sub_result_range = detail::saturate_range_t<auto_sub_result_range, shifted_a_range>;
+			using sub_temporary_value_type = typename sub_result_range::value_type;
+
+			using add_result_range = detail::saturate_range_t<auto_add_result_range, shifted_a_range>;
+			using add_temporary_value_type = typename add_result_range::value_type;
+
+			using sub_result_value_type = sub_temporary_value_type;
+			static constexpr int sub_result_bits = sub_result_range::bits;
+
+			using add_result_value_type = sub_temporary_value_type;
+			static constexpr int add_result_bits = sub_result_range::bits;
+
+			static constexpr int sub_i = i_constrained ?  result_range::integer_bits  : (sub_result_bits - shifted_a_type::radix_pos);
+			static constexpr int sub_f = f_constrained ?  result_range::fraction_bits : (shifted_a_type::radix_pos);
+			static constexpr int sub_o = f_constrained ? (shifted_a_type::radix_pos-sub_f) : util::min(shifted_a_type::offset, shifted_b_type::offset);
+
+			static constexpr int add_i = i_constrained ?  result_range::integer_bits  : (add_result_bits - shifted_a_type::radix_pos);
+			static constexpr int add_f = f_constrained ?  result_range::fraction_bits : (shifted_a_type::radix_pos);
+			static constexpr int add_o = f_constrained ? (shifted_a_type::radix_pos-sub_f) : util::min(shifted_a_type::offset, shifted_b_type::offset);
+
+			using sub_result_type = fixed_auto<sub_i, sub_f, sub_result_range::is_signed, sub_result_range>;
+			using add_result_type = fixed_auto<add_i, add_f, add_result_range::is_signed, add_result_range>;
 
 			constexpr static add_result_type add(A a, B b) {
-				return add_result_type(a.template scaling_shift<a_shift>().value + b.template scaling_shift<b_shift>().value);
+				return add_result_type(add_temporary_value_type(a.template scaling_shift<a_shift>().value) + add_temporary_value_type(b.template scaling_shift<b_shift>().value));
 			}
 
-			constexpr static sub_result_type_t sub(A a, B b) {
-				return sub_result_type_t(sub_temporary_value_type(a.template scaling_shift<a_shift>().value) - sub_temporary_value_type(b.template scaling_shift<b_shift>().value));
+			constexpr static sub_result_type sub(A a, B b) {
+				return sub_result_type(sub_temporary_value_type(a.template scaling_shift<a_shift>().value) - sub_temporary_value_type(b.template scaling_shift<b_shift>().value));
 			}
 		};
 	}
