@@ -42,14 +42,14 @@ namespace fix {
 		}
 
 		template< typename T>
-		constexpr typename std::enable_if<std::is_integral<T>::value, unsigned int>::type
+		constexpr typename std::enable_if<std::is_integral<T>::value, int>::type
 			log2_floor(T value)
 		{
 			return (value <= 1) ? 0 : (1 + log2_floor(value >> 1));
 		}
 
 		template<typename T>
-		constexpr typename std::enable_if<std::is_integral<T>::value, unsigned int>::type
+		constexpr typename std::enable_if<std::is_integral<T>::value, int>::type
 			log2_ceil(T value)
 		{
 			return
@@ -77,7 +77,7 @@ namespace fix {
 		}
 
 		template<typename T>
-		constexpr typename std::enable_if<std::is_floating_point<T>::value, unsigned int>::type
+		constexpr typename std::enable_if<std::is_floating_point<T>::value, int>::type
 			log2_floor(T value)
 		{
 			return log2_floor(largest_unsigned_type(floor(value)));
@@ -98,10 +98,10 @@ namespace fix {
 		}
 
 		template<typename T>
-		constexpr typename std::enable_if<std::is_floating_point<T>::value, unsigned int>::type
+		constexpr typename std::enable_if<std::is_floating_point<T>::value, int>::type
 			log2_ceil(T value)
 		{
-			return log2_ceil(largest_unsigned_type(ceil(value)));
+			return (value >= 1) ? log2_ceil(largest_unsigned_type(ceil(value))) : -log2_floor(largest_unsigned_type(floor(1.0/value)));
 		}
 
 		template< typename T >

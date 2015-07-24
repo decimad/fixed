@@ -63,6 +63,8 @@ void sine_test2()
 	CA val = sine3(angle);
 	CA result_bits = val.integer_bits;
 	CA conv = val.to<double>();
+
+	CA value = util::log2_ceil(0.001);
 }
 
 void range_mul_test()
