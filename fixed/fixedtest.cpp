@@ -145,11 +145,22 @@ void macro_test()
 	constexpr auto conv2 = prec_value.to<double>();
 }
 
-template< typename FixedA, typename FixedB >
-constexpr auto max_mul_integer_bits(FixedA a, FixedB b)
-{
+#ifdef _MSC_VER
+#include <iostream>
 
+void assign_test()
+{
+	using type_a = FIXED_RANGE_I(0, 255);
+	using type_b = FIXED_RANGE_I(-16000, 16000);
+
+	type_a value;
+	value = type_b(15000);
+	//value.assign_saturated(type_b(15000));
+
+	std::cout << value.value << "\n";
 }
+
+#endif
 
 void test_min_max()
 {
@@ -438,7 +449,7 @@ void add_test()
 #ifdef _MSC_VER
 int main()
 {
-	add_test();
+	assign_test();
 }
 #endif
 

@@ -112,6 +112,11 @@ namespace fix {
 		SC int  bits         = util::range_bits(min, max);
 		using min_type       = detail::value_type_t<bits, is_signed>;
 		using min_range_type = value_range<min_type, min, max>;
+
+		template< typename S >
+		static constexpr T saturate(S value) {
+			return util::saturate(value, min, max);
+		}
 	};
 	
 #define RANGE_FROM_VALS(A,B) \
@@ -288,13 +293,42 @@ namespace fix {
 		{
 		}
 
-		template<int Off, typename T, typename R>
-		fixed& operator=(fixed<I, F, S, T, R> other)
-		{
-			value = other.value;
+		template<typename Rounding = rounding::floor, int OI, int OF, bool OS, typename OT, typename OR>
+		fixed& assign(fixed<OI, OF, OS, OT, OR> other) {
+			value = static_cast<value_type>(scaling_shift<F - OF, Rounding>(other).value);
+			return *this;
+		}
+
+		template<int OI, int OF, bool OS, typename OT, typename OR>
+		fixed& operator=(fixed<OI, OF, OS, OT, OR> other) {
+			assign(other);
+			return *this;
+		}
+
+		template<typename Rounding = rounding::floor, int OI, int OF, bool OS, typename OT, typename OR>
+		fixed& assign_saturated(fixed<OI, OF, OS, OT, OR> other) {
+			value = range_type::template saturate(scaling_shift<F - OF, Rounding>(other).value);
+			return *this;
+		}
+
+		template<int OI, int OF, bool OS, typename OT, typename OR>
+		fixed& operator*=(fixed<OI, OF, OS, OT, OR> other) {
+			assign(*this * other);
 			return *this;
 		}
 		
+		template<int OI, int OF, bool OS, typename OT, typename OR>
+		fixed& operator+=(fixed<OI, OF, OS, OT, OR> other) {
+			assign(*this + other);
+			return *this;
+		}
+
+		template<int OI, int OF, bool OS, typename OT, typename OR>
+		fixed& operator-=(fixed<OI, OF, OS, OT, OR> other) {
+			assign(*this - other);
+			return *this;
+		}
+
 	public:
 		static constexpr int exponent(int bit)
 		{
