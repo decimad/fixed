@@ -15,7 +15,7 @@ template< typename FixedType >
 constexpr auto sine3_1stq(FixedType angle)
 {
 	// "taylor": 1/2 * angle * (3 - angle*angle)
-	return (angle * (FIXED_CONSTANT_I(3) - fix::square(angle))).template virtual_shift<-1>();
+	return fix::virtual_shift<-1>(angle * (FIXED_CONSTANT_I(3) - fix::square(angle)));
 }
 
 template< typename FixedType >
@@ -36,7 +36,7 @@ void sine_test2()
 	CA angle_max = angle.max().to<double>();
 	CA angle_min = angle.min().to<double>();
 
-	CA angle_norm = angle.virtual_shift<0>();
+	CA angle_norm = virtual_shift<0>(angle);
 
 	CA angle_norm_max = angle_norm.max().to<double>();
 	CA angle_norm_min = angle_norm.min().to<double>();
@@ -52,7 +52,7 @@ void sine_test2()
 	CA diff_min = value.min().to<double>();
 	CA diff_max = value.max().to<double>();
 
-	CA result = (angle_norm * value).virtual_shift<-1>();
+	CA result = virtual_shift<-1>(angle_norm * value);
 	CA result_integer = result.integer_bits;
 	CA result_fraction = result.fractional_bits;
 	CA result_max = result.max();
@@ -69,12 +69,10 @@ void sine_test2()
 void range_mul_test()
 {
 	using namespace fix;
-	CA angle = sfixed<12, 0, value_range<short, -2047, 2047>>::from(-2047).virtual_shift<-11>();
-	CA product = angle * angle * angle * angle;
-	CA value = product.to<double>();
+	CA angle = virtual_shift<-11>(sfixed<12, 0, value_range<short, -2047, 2047>>::from(-2047));
+	CA product = square(square(angle));
+	CA value   = product.to<double>();
 }
-
-
 
 void bits_for_range_test()
 {
@@ -332,13 +330,15 @@ void to_integral_rounding_test() {
 
 void scaling_shift_test()
 {
+	using namespace fix;
+
 	// Shifting up needs promotion
-	constexpr fix::sfixed<31, 0> value_int32(1<<30);
-	constexpr auto result = value_int32.scaling_shift<1>();
+	constexpr sfixed<31, 0> value_int32(1<<30);
+	constexpr auto result = scaling_shift<1>(value_int32);
 	static_assert(std::is_same<decltype(result.value), int>::value, "Foo");
 
-	constexpr fix::sfixed<33, 0> value_int64(1ull << 32);
-	constexpr auto result22 = value_int64.scaling_shift<-1>();
+	constexpr sfixed<33, 0> value_int64(1ull << 32);
+	constexpr auto result22 = scaling_shift<-1>(value_int64);
 
 	constexpr auto val  = fix::ufixed<15, 0>::from(32767);
 	constexpr auto conv = val.to<double>();
@@ -371,8 +371,8 @@ void div_test2() {
 	CA shift_nom = div_diag::shift_nom;
 	CA shift_den = div_diag::shift_den;
 	
-	CA shifted_nom = nom.scaling_shift<shift_nom>();
-	CA shifted_den = den.scaling_shift<shift_den>();
+	CA shifted_nom = scaling_shift<shift_nom>(nom);
+	CA shifted_den = scaling_shift<shift_den>(den);
 
 	CA result_f = div_diag::result_f;
 	CA result_i = div_diag::result_i;
@@ -384,39 +384,65 @@ void div_test2() {
 	constexpr auto seconds_factor = ufixed<-28, 60>::from(1e-9);
 }
 
+#ifdef _MSC_VER
+#include <typeinfo>
+#include <iostream>
+#endif
+
 
 void add_test()
 {
 	using namespace fix;
 
-	using a_type = fixed<28, -8, false, 1>;
-	using b_type = fixed<12, -8, true, 15>;
+	using a_type = fixed<28, -8, false>;	// 20 bits
+	using b_type = fixed<12, -8, true >;	//  4 bits
 	
 	constexpr a_type lhs = a_type::from(272323);
-	constexpr b_type rhs = b_type::from(1028);
+	constexpr b_type rhs = b_type::from(-1022);
 
 	constexpr auto a_test = lhs.to<double>();
 	constexpr auto b_test = rhs.to<double>();
 
-	using add_sub_struct = detail::add_sub_struct< meta::list<fits<22, 0>>, a_type, b_type >;
+	using add_sub_struct = detail::add_sub_struct< meta::list<positive, fits<22, 0>>, a_type, b_type >;
 
 	constexpr auto a_shift = add_sub_struct::a_shift;
-	constexpr auto a_fixed = lhs.scaling_shift<a_shift>();
+	constexpr auto a_fixed = scaling_shift<a_shift>(lhs);
 	constexpr auto a_value = a_fixed.to<double>();
 
 	constexpr auto diff = add_sub_struct::exponent_difference;
 
 	constexpr auto b_shift = add_sub_struct::b_shift;
-	constexpr auto b_fixed = rhs.scaling_shift<b_shift>();
+	constexpr auto b_fixed = scaling_shift<b_shift>(rhs);
 	constexpr auto b_value = b_fixed.to<double>();
 
-	constexpr auto overshoot  = add_sub_struct::overshoot;
-	constexpr auto undershoot = add_sub_struct::undershoot;
+	constexpr auto test2   = scaling_shift<b_shift>(rhs);
+	constexpr auto test3 = virtual_shift<-1>(rhs);
+	constexpr auto test4 = test3.to<double>();
 
-	constexpr auto sum = add<positive, fits<22,0>>(lhs, rhs);
-	constexpr auto value = sum.to<double>();
+	constexpr auto test5 = literal_shift<0>(rhs);
+	constexpr auto test6 = test5.to<double>();
+
+
+	constexpr auto bexp0 = b_fixed.exponent(0);
+	constexpr auto aexp0 = a_fixed.exponent(0);
+
+	constexpr auto overshoot  = add_sub_struct::overshoot;
+//	constexpr auto undershoot = add_sub_struct::undershoot;
+
+	using add_result = add_sub_struct::add_result_type;
+
+	constexpr auto fum = add<positive, fits<22,0>>(lhs, rhs);
+	constexpr auto value = fum.to<double>();
+
+	std::cout << typeid(decltype(fum)).name() << "\n";
 }
 
+#ifdef _MSC_VER
+int main()
+{
+	add_test();
+}
+#endif
 
 
 void sub_test()

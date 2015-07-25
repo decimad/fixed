@@ -123,7 +123,7 @@ namespace fix {
 			abs2(T value)
 		{
 			using result_type = typename std::make_unsigned<T>::type;
-			return (value >= 0) ? static_cast<result_type>(value) : -static_cast<result_type>(value);
+			return (value >= 0) ? static_cast<result_type>(value) : (static_cast<result_type>(~value+1u));
 		}
 
 		template<typename T>
@@ -218,25 +218,25 @@ namespace fix {
 			NearestDown
 		};
 
-		template< typename T >
+		template< bool NoMask = false, typename T >
 		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
 			ceil(T value, int digits)
 		{
-			return (value & ~bitmask<T>(digits)) + ((value & bitmask<T>(digits)) ? (T(1) << digits) : 0);
+			return (NoMask ? (value)  : (value & ~bitmask<T>(digits))) + ((value & bitmask<T>(digits)) ? (T(1) << digits) : 0);
 		}
 
-		template< typename T >
+		template< bool NoMask = false, typename T >
 		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
 			floor(T value, int digits)
 		{
-			return (value & ~bitmask<T>(digits));
+			return NoMask ? value : (value & ~bitmask<T>(digits));
 		}
 
-		template< typename T >
+		template< bool NoMask = false, typename T >
 		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
 			towards_zero(T value, int digits)
 		{
-			return (value > 0) ? floor(value, digits) : ceil(value, digits);
+			return (value > 0) ? floor<NoMask>(value, digits) : ceil<NoMask>(value, digits);
 		}
 
 		template< typename T >
@@ -246,11 +246,11 @@ namespace fix {
 			return (value > 0) ? floor(value) : ceil(value);
 		}
 
-		template< typename T >
+		template< bool NoMask = false, typename T >
 		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
 			towards_infinity(T value, int digits)
 		{
-			return (value >= 0) ? ceil(value, digits) : floor(value, digits);
+			return (value >= 0) ? ceil<NoMask>(value, digits) : floor<NoMask>(value, digits);
 		}
 
 		template< typename T >
@@ -260,11 +260,11 @@ namespace fix {
 			return (value >= 0) ? ceil(value) : floor(value);
 		}
 
-		template< typename T >
+		template< bool NoMask = false, typename T >
 		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
 			nearest_up(T value, int digits)
 		{
-			return ((value & bitmask<T>(digits)) >= (1 << (digits - 1))) ? ceil(value, digits) : floor(value, digits);
+			return ((value & bitmask<T>(digits)) >= (1 << (digits - 1))) ? ceil<NoMask>(value, digits) : floor<NoMask>(value, digits);
 		}
 
 		template< typename T >
@@ -274,11 +274,11 @@ namespace fix {
 			return (value - floor(value) >= 0.5) ? ceil(value) : floor(value);
 		}
 
-		template< typename T >
+		template< bool NoMask = false, typename T >
 		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
 			nearest_down(T value, int digits)
 		{
-			return ((value & bitmask<T>(digits)) <= (T(1) << (digits - 1))) ? floor(value, digits) : ceil(value, digits);
+			return ((value & bitmask<T>(digits)) <= (T(1) << (digits - 1))) ? floor<NoMask>(value, digits) : ceil<NoMask>(value, digits);
 		}
 
 		template< typename T >
@@ -295,69 +295,69 @@ namespace fix {
 			// Float rounding happening in fixed<>::from only
 
 			// Integral rounding happening throughout
-			template< RoundModes Mode >
+			template< RoundModes Mode, bool NoMask = false >
 			struct integral_round_switch;
 
 			// Truncate ... fastest rounding possible
-			template<>
-			struct integral_round_switch< RoundModes::Floor >
+			template< bool NoMask >
+			struct integral_round_switch< RoundModes::Floor, NoMask >
 			{
 				template< typename T >
 				static constexpr T round(T value, int digits)
 				{
 					// For now I'm relying that the compiler will remove this
 					// if a shifting operation follows right after.
-					return floor(value, digits);
+					return floor<NoMask>(value, digits);
 				}
 			};
 
-			template<>
-			struct integral_round_switch< RoundModes::Ceil >
+			template< bool NoMask >
+			struct integral_round_switch< RoundModes::Ceil, NoMask >
 			{
 				template< typename T >
 				static constexpr T round(T value, int digits)
 				{
-					return ceil(value, digits);
+					return ceil<NoMask>(value, digits);
 				}
 			};
 
-			template<>
-			struct integral_round_switch< RoundModes::Zero >
+			template< bool NoMask >
+			struct integral_round_switch< RoundModes::Zero, NoMask >
 			{
 				template< typename T >
 				static constexpr T round(T value, int digits)
 				{
-					return towards_zero(value, digits);
+					return towards_zero<NoMask>(value, digits);
 				}
 			};
 
-			template<>
-			struct integral_round_switch< RoundModes::Infinity >
+			template< bool NoMask >
+			struct integral_round_switch< RoundModes::Infinity, NoMask >
 			{
 				template< typename T >
 				static constexpr T round(T value, int digits)
 				{
-					return towards_infinity(value, digits);
+					return towards_infinity<NoMask>(value, digits);
 				}
 			};
 
-			template<>
-			struct integral_round_switch< RoundModes::NearestUp >
+			template< bool NoMask >
+			struct integral_round_switch< RoundModes::NearestUp, NoMask >
 			{
 				template< typename T >
 				static constexpr T round(T value, int digits)
 				{
-					return nearest_up(value, digits);
+					return nearest_up<NoMask>(value, digits);
 				}
 			};
 
-			template<>
-			struct integral_round_switch< RoundModes::NearestDown >
+			template< bool NoMask >
+			struct integral_round_switch< RoundModes::NearestDown, NoMask >
 			{
 				template< typename T >
 				static constexpr T round(T value, int digits)
 				{
-					return nearest_down(value, digits);
+					return nearest_down<NoMask>(value, digits);
 				}
 			};
 
@@ -451,7 +451,7 @@ namespace fix {
 			return (exponent >= 0) ?
 				(value << exponent)
 				:
-				(detail::integral_round_switch<Mode>::round(value, -exponent) >> (-exponent));
+				(detail::integral_round_switch<Mode, true>::round(value, -exponent) >> (-exponent));
 		}
 
 		namespace detail {

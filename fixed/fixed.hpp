@@ -11,11 +11,10 @@
 #include <fixed/fixedmeta.hpp>
 
 // mst 2015/07/22
-// Todo: - improve rounding on scaling shifts with offset bits
+// Todo:
 //       - add next_even/next_odd rounding mode
 //       - see if the shift operations should rather be constexpr free functions
 //       - see if fixed::to should rather be a constexpr free function
-//       - see if we can scrap offset alltogether since it doesn't bring anything to the table
 //       - no rounding applied in scaling shift yet (should really be free function I guess)
 //       - hope people find bugs/fixes ;)
 
@@ -25,6 +24,25 @@ namespace fix {
 
 	using int64 = long long;
 	using uint64 = unsigned long long;
+
+	//
+	// Rounding
+	//
+
+	using util::RoundModes;
+
+	namespace rounding {
+
+		using ceil = std::integral_constant<RoundModes, RoundModes::Ceil >;
+		using floor = std::integral_constant<RoundModes, RoundModes::Floor>;
+		using zero = std::integral_constant<RoundModes, RoundModes::Zero>;
+		using infinity = std::integral_constant<RoundModes, RoundModes::Infinity>;
+		using nearest_odd = std::integral_constant<RoundModes, RoundModes::NearestOdd>;
+		using nearest_even = std::integral_constant<RoundModes, RoundModes::NearestEven>;
+		using nearest_up = std::integral_constant<RoundModes, RoundModes::NearestUp >;
+		using nearest_down = std::integral_constant<RoundModes, RoundModes::NearestDown >;
+
+	}
 
 	//
 	// Value type deduction
@@ -101,8 +119,8 @@ namespace fix {
 
 	namespace detail {
 
-		template< int I, int F, bool S, int O >
-		using fixed_value_type_t = value_type_t<I+F+O, S>;
+		template< int I, int F, bool S >
+		using fixed_value_type_t = value_type_t<I+F, S>;
 		
 		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed>>
 		constexpr ValueType max_value()
@@ -143,20 +161,20 @@ namespace fix {
 	// Shifting support
 	//
 
-	template < int I, int F, bool S = true, int O = 0, typename ValueType = detail::value_type_t<I + F + O, S>, typename Range = detail::auto_fixed_range<I+F+O, S> >
+	template < int I, int F, bool S = true, typename ValueType = detail::value_type_t<I + F, S>, typename Range = detail::auto_fixed_range<I+F, S> >
 	class fixed;
 
 	namespace detail {
 
 		// Handles automatic type promotion while shifting a fixed numer up (<<)
-		template< typename OriginalType, int Shift >
+		template< typename OriginalType, int Shift, typename Rounding = rounding::floor >
 		struct scaling_shift_values;
 
-		template< int I, int F, bool S, int O, typename ValueType, typename Range, int Shift >
-		struct scaling_shift_values< fixed<I, F, S, O, ValueType, Range>, Shift >
+		template< int I, int F, bool S, typename ValueType, typename Range, int Shift, typename Rounding >
+		struct scaling_shift_values< fixed<I, F, S, ValueType, Range>, Shift, Rounding >
 		{
-			using original_type = fixed<I, F, S, O, ValueType, Range>;
-			using destination_value_type = fixed_value_type_t< I, F+util::min(O+Shift,0), S, util::max(O + Shift, 0) >;
+			using original_type = fixed<I, F, S, ValueType, Range>;
+			using destination_value_type = value_type_t< I + F + Shift, S >;
 
 			// We can potentially be much smarter here...
 			using precast_type = typename std::conditional< (sizeof(destination_value_type)>sizeof(ValueType)) && (Shift > 0), destination_value_type, ValueType >::type;
@@ -165,54 +183,61 @@ namespace fix {
 			static constexpr int precast_bits = sizeof(precast_type) * 8;
 			static constexpr int free_bits = precast_bits - original_type::data_bits;
 
+			static_assert(I + F + Shift <= precast_bits, "Exceeding platform bounds.");
+			static_assert(I + F + Shift > 0, "Shifting to zero.");
+
 			using result_type = fixed<
-				I - util::max<int>(Shift - free_bits, 0),
-				F + util::min<int>(Shift + int(O), 0),
+				I,
+				F + Shift,
 				S,
-				util::max<int>(Shift + int(O), 0),
 				destination_value_type,
-				value_range<destination_value_type, util::shifted(destination_value_type(Range::min), Shift), util::shifted(destination_value_type(Range::max), Shift)>
+				value_range<destination_value_type, util::scaled_exp2<Rounding::value>(precast_type(Range::min), Shift), util::scaled_exp2<Rounding::value>(precast_type(Range::max), Shift)>
+			>;
+		};
+
+		// Handles automatic type promotion while shifting a fixed numer up (<<)
+		template< typename OriginalType, int Shift, typename Rounding = rounding::floor >
+		struct literal_shift_values;
+
+		template< int I, int F, bool S, typename ValueType, typename Range, int Shift, typename Rounding >
+		struct literal_shift_values< fixed<I, F, S, ValueType, Range>, Shift, Rounding >
+		{
+			using original_type = fixed<I, F, S, ValueType, Range>;
+			using destination_value_type = value_type_t< I + F + Shift, S >;
+
+			// We can potentially be much smarter here...
+			using precast_type  = typename std::conditional< (sizeof(destination_value_type)>sizeof(ValueType)) && (Shift > 0), destination_value_type, ValueType >::type;
+			using postcast_type = destination_value_type;
+
+			static constexpr int precast_bits = sizeof(precast_type) * 8;
+			static constexpr int free_bits = precast_bits - original_type::data_bits;
+
+			static_assert(I + F + Shift <= precast_bits, "Exceeding platform bounds.");
+			static_assert(I + F + Shift > 0, "Shifting to zero.");
+
+			using result_type = fixed<
+				I + Shift,
+				F,
+				S,
+				destination_value_type,
+				value_range<destination_value_type, util::scaled_exp2<Rounding::value>(precast_type(Range::min), Shift), util::scaled_exp2<Rounding::value>(precast_type(Range::max), Shift)>
 			>;
 		};
 
 	}
 
-	//
-	// Rounding
-	//
 
-	using util::RoundModes;
-
-	namespace rounding {
-
-		using ceil = std::integral_constant<RoundModes, RoundModes::Ceil >;
-		using floor = std::integral_constant<RoundModes, RoundModes::Floor>;
-		using zero = std::integral_constant<RoundModes, RoundModes::Zero>;
-		using infinity = std::integral_constant<RoundModes, RoundModes::Infinity>;
-		using nearest_odd = std::integral_constant<RoundModes, RoundModes::NearestOdd>;
-		using nearest_even = std::integral_constant<RoundModes, RoundModes::NearestEven>;
-		using nearest_up = std::integral_constant<RoundModes, RoundModes::NearestUp >;
-		using nearest_down = std::integral_constant<RoundModes, RoundModes::NearestDown >;
-
-	}
 
 	//
 	// fixed type
 	//
 
-	template<int I, int F, bool S, int O, typename ValueType, typename RangeType>
+	template<int I, int F, bool S, typename ValueType, typename RangeType>
 	class fixed {
 	public:
-		// The offset might be a waste of effort. It was supposed to set apart irrelevant bits
-		// at the LSBs after an up-shift from significant bits.
-				
 		using value_type  = ValueType;
 		using range_type = RangeType;
 		
-		// If we set up the template argument as unsigned, we would have to cast everywhere
-		// becaue C promotes to unsigned...
-		static_assert(O >= 0, "Offset must be equal or larger than 0");
-
 		// some handy constants
 		SC bool is_signed = S;
 
@@ -227,22 +252,21 @@ namespace fix {
 		// number of fractional bits
 		SC int fractional_bits = F;
 		
-		// number of offset bits at the least significant bits
-		SC int offset = O;
-
 		// position of radix point. note that this can very well be negative.
-		SC int radix_pos = fractional_bits + offset;
+		SC int radix_pos = fractional_bits;
 
 		// number of significant bits
 		SC int data_bits = integer_bits + fractional_bits;
 
-		// numer of bits used for integer, fractional and offset
-		SC int low_bits = data_bits + offset;
+		static_assert(data_bits > 0, "Removed all data.");
+
+		// numer of bits used for integer, fractional
+		SC int low_bits = data_bits;
 
 		// number of unused bits at the most significant digits
 		SC int free_bits = value_bits - low_bits;
 		
-		// scaling (exp2) which needs to be applied to value to shift the fractional digit before the LSB (ie. to extract the integer-part), !not! considering offset
+		// scaling (exp2) which needs to be applied to value to shift the fractional digit before the LSB (ie. to extract the integer-part)
 		SC int scaling = -fractional_bits;
 
 		// the maximum positive scaling shift which can be applied without promotion
@@ -259,49 +283,38 @@ namespace fix {
 		{}
 
 		template<int Off, typename T, typename R>
-		constexpr fixed(fixed<I, F, S, Off, T, R> other)
-			: value(other.scaling_shift<offset - Off>().value)
+		constexpr fixed(fixed<I, F, S, T, R> other)
+			: value(other.value)
 		{
 		}
 
 		template<int Off, typename T, typename R>
-		fixed& operator=(fixed<I, F, S, Off, T, R> other)
+		fixed& operator=(fixed<I, F, S, T, R> other)
 		{
-			value = other.scaling_shift<offset - Off>().value;
+			value = other.value;
 			return *this;
 		}
 		
-		/*
-		constexpr fixed(const fixed& other)
-			: value(other.value)
-		{}
-		*/
-
 	public:
 		static constexpr int exponent(int bit)
 		{
-			return -fractional_bits - offset + bit;
+			return -fractional_bits + bit;
 		}
 
 		static constexpr int max_exponent()
 		{
-			return exponent(offset + integer_bits + fractional_bits - 1);
+			return exponent(integer_bits + fractional_bits - 1);
 		}
 
 		static constexpr int min_exponent()
 		{
-			return exponent(offset);
+			return exponent(0);
 		}
 
 		template< typename T >
 		constexpr auto to_type() const
 		{
-			return fixed<integer_bits + ((!is_signed && std::is_signed<T>::value) ? 1 : 0), fractional_bits, std::is_signed<T>::value, offset, T, range_type>(value);
-		}
-
-		template< int Shift >
-		constexpr auto virtual_shift() const {
-			return fixed<integer_bits + Shift, fractional_bits - Shift, S, offset, value_type, range_type>(value);
+			return fixed<integer_bits + ((!is_signed && std::is_signed<T>::value) ? 1 : 0), fractional_bits, std::is_signed<T>::value, T, range_type>(value);
 		}
 
 		static constexpr fixed max()
@@ -314,59 +327,81 @@ namespace fix {
 			return fixed(static_cast<value_type>(range_type::min));
 		}
 
-		template< int Shift >
-		using scaling_values = detail::scaling_shift_values< fixed, Shift >;
-
-		template< int Shift >
-		constexpr typename scaling_values<Shift>::result_type scaling_shift() const {
-			// Fixme: no rounding applied here (if shifting down, do everything up to offset without rounding and round the rest accordingly before shifting)
-			return typename scaling_values<Shift>::result_type(
-				static_cast<typename scaling_values<Shift>::postcast_type>(
-					util::shifted( static_cast<typename scaling_values<Shift>::precast_type>(value), Shift)
-				)
-			);
-		}
-
-		template< int Shift >
-		using scaling_shifted_type = typename scaling_values<Shift>::result_type;
-
-		constexpr void literal_shift(int Shift) const
-		{
-		}
-		
 		template< typename RoundingWrapper = rounding::floor, typename U >
 		constexpr static fixed from(U value)
 		{
 			// Need to be more sophisticated here... detect powers of 2 and such which make negative integers or fractions possible (for constants)
 			return
 				//( util::test_overflow<value_type, data_bits>(util::round(util::scaled_exp2(value, -scaling))) ) ?
-				fixed(static_cast<value_type>(util::scaled_exp2<RoundingWrapper::value>(value, -scaling)) << offset) /*: (throw std::logic_error("Out of Bounds."))*/;
+				fixed(static_cast<value_type>(util::scaled_exp2<RoundingWrapper::value>(value, -scaling))) /*: (throw std::logic_error("Out of Bounds."))*/;
 		}
 
 		template<typename U, typename RoundingWrapper = rounding::floor>
 		constexpr typename std::enable_if<std::is_floating_point<U>::value, U>::type
 			to() const
 		{
-			return util::scaled_exp2<RoundingWrapper::value, U>(value >> offset, scaling);
+			return util::scaled_exp2<RoundingWrapper::value, U>(value, scaling);
 		}
 
 		template<typename U, typename RoundingWrapper = rounding::floor>
 		constexpr typename std::enable_if<std::is_integral<U>::value, U>::type
 			to() const
 		{
-			return util::scaled_exp2<RoundingWrapper::value, U>(value >> offset, scaling);
+			return util::scaled_exp2<RoundingWrapper::value, U>(value, scaling);
 		}
 
 	};
 
 	template< int I, int F, typename RangeType = detail::auto_fixed_range<I + F, false> >
-	using ufixed = fixed<I, F, false, 0, detail::value_type_t<I+F, false>, RangeType>;
+	using ufixed = fixed<I, F, false, detail::value_type_t<I+F, false>, RangeType>;
 
 	template< int I, int F, typename RangeType = detail::auto_fixed_range<I + F, true> >
-	using sfixed = fixed<I, F, true, 0, detail::value_type_t<I+F,true>, RangeType>;
+	using sfixed = fixed<I, F, true, detail::value_type_t<I+F,true>, RangeType>;
 
 	template< int I, int F, bool S, typename R >
-	using fixed_auto = ::fix::fixed<I, F, S, 0, ::fix::detail::value_type_t<I + F, S>, R>;
+	using fixed_auto = ::fix::fixed<I, F, S, ::fix::detail::value_type_t<I + F, S>, R>;
+
+	//
+	// Operations
+	//
+	template< int Shift, typename RoundMode = rounding::floor, int I, int F, bool S, typename T, typename RT >
+	constexpr auto scaling_shift(fixed<I, F, S, T, RT > val)
+	{
+		using values = detail::scaling_shift_values<fixed<I, F, S, T, RT>, Shift, RoundMode>;
+		using return_type = typename values::result_type;
+		using return_value_type = typename return_type::value_type;
+		using precast_type = typename values::precast_type;
+
+		return return_type(
+			static_cast<return_value_type>(
+				util::scaled_exp2<RoundMode::value>(
+					static_cast<precast_type>(val.value),
+					Shift
+				)
+			)
+		);
+	}
+
+	template< int Shift, int I, int F, bool S, typename T, typename RT >
+	constexpr auto virtual_shift(fixed<I, F, S, T, RT> val)
+	{
+		return fixed<I + Shift, F - Shift, S, T, RT>(val.value);
+	}
+
+	template< int Shift, typename RoundMode = rounding::floor, int I, int F, bool S, typename T, typename RT >
+	constexpr auto literal_shift(fixed<I, F, S, T, RT> val)
+	{
+		using values = detail::literal_shift_values<fixed<I, F, S, T, RT>, Shift, RoundMode>;
+		using return_type = typename values::result_type;
+		using precast_type = typename values::precast_type;
+
+		return return_type(
+			util::scaled_exp2<RoundMode::value>(
+				static_cast<precast_type>(val.value),
+				Shift
+			)
+		);
+	}
 
 	template< int I, int F = std::numeric_limits<int>::max() >
 	struct fits {
@@ -434,7 +469,7 @@ namespace fix {
 			static constexpr bool constrained_fraction = (result_range::fraction_bits != std::numeric_limits<int>::max());
 
 			// Check for rounding mode
-			static constexpr RoundModes rounding = meta::find_if_or< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >::type::value;
+			using rounding_type = typename meta::find_if_or< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >::type;
 
 			// Check for maximum bitcount in intermediates
 			static constexpr int max_size = meta::find_if_or< ArgList, max_size_finder, platform_max_size>::type::value;
@@ -452,14 +487,15 @@ namespace fix {
 		template< typename Args, typename Nom, typename Denom >
 		struct div_struct;
 
-		template< typename Args, typename NomT, int NomI, int NomF, bool NomS, int NomO, typename NomR, typename DenT, int DenI, int DenF, bool DenS, int DenO, typename DenR >
-		struct div_struct< Args, fixed<NomI,NomF,NomS,NomO, NomT, NomR>, fixed<DenI, DenF, DenS, DenO, DenT, DenR>>  {
-			using nom_type = fixed<NomI, NomF, NomS, NomO, NomT, NomR>;
-			using den_type = fixed<DenI, DenF, DenS, DenO, DenT, DenR>;
+		template< typename Args, typename NomT, int NomI, int NomF, bool NomS, typename NomR, typename DenT, int DenI, int DenF, bool DenS, typename DenR >
+		struct div_struct< Args, fixed<NomI,NomF,NomS, NomT, NomR>, fixed<DenI, DenF, DenS, DenT, DenR>>  {
+			using nom_type = fixed<NomI, NomF, NomS, NomT, NomR>;
+			using den_type = fixed<DenI, DenF, DenS, DenT, DenR>;
 			using parsed_args = div_args<Args>;
 
+			using rounding_type = typename parsed_args::rounding_type;
 			using auto_result_value_type = typename auto_type<NomT, DenT>::type;
-
+			
 			static constexpr int auto_i = NomI + DenF;
 			static constexpr bool source_signed = NomS || DenS;
 			static constexpr int result_i = parsed_args::constrained_integer ? parsed_args::result_range::integer_bits : auto_i;
@@ -478,22 +514,22 @@ namespace fix {
 
 			// exp(result.n) = exp(nom.0) - exp(den.0) + n
 			static constexpr int shift_nom_exact = nom_type::exponent(0) + den_type::fractional_bits + result_f;
-			static constexpr int shift_nom = util::min<int>(shift_nom_exact, max_size - nom_type::offset - nom_type::fractional_bits - nom_type::integer_bits);
-			static constexpr int shift_den = -den_type::offset - util::max<int>(shift_nom_exact-shift_nom, 0);
+			static constexpr int shift_nom =  util::min<int>(shift_nom_exact, max_size - nom_type::fractional_bits - nom_type::integer_bits);
+			static constexpr int shift_den = -util::max<int>(shift_nom_exact-shift_nom, 0);
 			
 			static constexpr result_type divide(nom_type nom, den_type den)
 			{
 				return result_type(
-					static_cast<result_value_type>(nom.template scaling_shift<shift_nom>().value / den.template scaling_shift<shift_den>().value )
+					static_cast<result_value_type>(scaling_shift<shift_nom, rounding_type>(nom).value / scaling_shift<shift_den, rounding_type>(den).value )
 					);
 			}
 		};
 	}
 
-	template< typename... Args, typename NomT, int NomI, int NomF, bool NomS, int NomO, typename NomR, typename DenT, int DenI, int DenF, bool DenS, int DenO, typename DenR>
-	constexpr auto div(fixed<NomI, NomF, NomS, NomO, NomT, NomR> nom, fixed<DenI, DenF, DenS, DenO, DenT, DenR> den)
+	template< typename... Args, typename NomT, int NomI, int NomF, bool NomS, typename NomR, typename DenT, int DenI, int DenF, bool DenS, typename DenR>
+	constexpr auto div(fixed<NomI, NomF, NomS, NomT, NomR> nom, fixed<DenI, DenF, DenS, DenT, DenR> den)
 	{
-		return detail::div_struct<meta::list<Args...>, fixed<NomI, NomF, NomS, NomO, NomT, NomR>, fixed<DenI, DenF, DenS, DenO, DenT, DenR>>::divide(nom, den);
+		return detail::div_struct<meta::list<Args...>, fixed<NomI, NomF, NomS, NomT, NomR>, fixed<DenI, DenF, DenS, DenT, DenR>>::divide(nom, den);
 	}
 
 	//
@@ -514,7 +550,7 @@ namespace fix {
 			static constexpr bool constrained_fraction = (result_range::fraction_bits != std::numeric_limits<int>::max());
 
 			// Check for rounding mode
-			static constexpr RoundModes rounding = meta::find_if_or< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >::type::value;
+			using rounding_type = typename meta::find_if_or< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >::type;
 
 			// Check for maximum bitcount in intermediates
 			static constexpr int max_size = meta::find_if_or< ArgList, max_size_finder, platform_max_size>::type::value;
@@ -551,10 +587,10 @@ namespace fix {
 		template< typename Args, typename Nom, typename Denom >
 		struct mul_struct;
 
-		template< typename Args, typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
-		struct mul_struct< Args, fixed<AI, AF, AS, AO, AT, AR>, fixed<BI, BF, BS, BO, BT, BR>> {
-			using a_type = fixed<AI, AF, AS, AO, AT, AR>;
-			using b_type = fixed<BI, BF, BS, BO, BT, BR>;
+		template< typename Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
+		struct mul_struct< Args, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR>> {
+			using a_type = fixed<AI, AF, AS, AT, AR>;
+			using b_type = fixed<BI, BF, BS, BT, BR>;
 			using parsed_args = mul_args<Args>;
 			
 			// the result range possibly specified by fits<A(,B)>
@@ -563,6 +599,9 @@ namespace fix {
 			// the automatic result value type, if not otherwise constrained by user
 			using result_value_type = typename auto_type<AT, BT>::type;
 			using range = mul_result_range<AR, BR>;
+			using intermediate_type = typename range::min_type;
+
+			using rounding_type = typename parsed_args::rounding_type;
 
 			static constexpr bool assume_positive = parsed_args::assume_result_positive;
 
@@ -570,7 +609,7 @@ namespace fix {
 			static constexpr bool stripped_sign = (AS || BS) && assume_positive;
 			static constexpr bool auto_s = (AS || BS) && (!assume_positive);
 
-			SC int auto_i = range::bits - AF - BF - AO - BO - (stripped_sign ? 1 : 0);
+			SC int auto_i = range::bits - AF - BF - (stripped_sign ? 1 : 0);
 
 			static constexpr int result_i = parsed_args::constrained_integer ? result_range::integer_bits : auto_i;
 			static constexpr int auto_f   = int(sizeof(result_value_type) * 8) - result_i;
@@ -579,17 +618,20 @@ namespace fix {
 			static constexpr int max_size = parsed_args::max_size;
 	
 			// Check to see if temporary overshoots the maximum given bitcount
-			static constexpr int overshoot = util::max(AI + AF + AO + BI + BF + BO - max_size, 0);
+			static constexpr int overshoot = util::max(AI + AF + BI + BF - max_size, 0);
 			
-			static constexpr int a_shift_temp = -util::min(AO, overshoot);
-			static constexpr int b_shift_temp = -util::min(BO, overshoot + a_shift_temp);
+			static constexpr int a_shift_temp = -util::min(0, overshoot);
+			static constexpr int b_shift_temp = -util::min(0, overshoot + a_shift_temp);
 			
 			static constexpr int remaining_overshoot = util::max(overshoot + a_shift_temp + b_shift_temp, 0);
 			static constexpr int a_shift = a_shift_temp - remaining_overshoot / 2;
 			static constexpr int b_shift = b_shift_temp - remaining_overshoot / 2 - remaining_overshoot % 2;
 			
-			using shifted_a_type = typename a_type::template scaling_shifted_type<a_shift>;
-			using shifted_b_type = typename b_type::template scaling_shifted_type<b_shift>;
+			using scaling_a_values = detail::scaling_shift_values<a_type, a_shift, rounding_type>;
+			using scaling_b_values = detail::scaling_shift_values<b_type, b_shift, rounding_type>;
+
+			using shifted_a_type = typename scaling_a_values::result_type;
+			using shifted_b_type = typename scaling_b_values::result_type;
 
 			static_assert((shifted_a_type::low_bits + shifted_b_type::low_bits) <= max_size, "Overshooting temporary.");
 
@@ -612,20 +654,22 @@ namespace fix {
 
 			static constexpr result_type mul(a_type a, b_type b)
 			{
-				return result_type( static_cast<typename result_type::value_type>(
-					util::scaled_exp2<parsed_args::rounding, mul_result_value_type>(
-						mul_result_value_type(a.template scaling_shift<a_shift>().value) * b.template scaling_shift<b_shift>().value,
-						result_shift)
-					) );
+				return result_type(
+					static_cast<typename result_type::value_type>(
+						util::scaled_exp2<rounding_type::value>(
+							intermediate_type(scaling_shift<a_shift, rounding_type>(a).value) * intermediate_type(scaling_shift<b_shift, rounding_type>(b).value),
+							result_shift)
+						) 
+				);
 			}
 		};
 
 	}
 
-	template< typename... Args, typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR>
-	constexpr auto mul(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
+	template< typename... Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR>
+	constexpr auto mul(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
-		return detail::mul_struct<meta::list<Args...>, fixed<AI, AF, AS, AO, AT, AR>, fixed<BI, BF, BS, BO, BT, BR>>::mul(a, b);
+		return detail::mul_struct<meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR>>::mul(a, b);
 	}
 
 #define DEBUG_MUL( A, B, ... ) \
@@ -645,11 +689,14 @@ namespace fix {
 
 			// Check for contrained result range
 			using result_range = typename meta::find_if_or< ArgList, fits_finder, fits<std::numeric_limits<int>::max()> >::type;
-			static constexpr bool constrained_integer = (result_range::integer_bits != std::numeric_limits<int>::max());
-			static constexpr bool constrained_fraction = (result_range::fraction_bits != std::numeric_limits<int>::max());
+			static constexpr bool is_integer_constrained  = (result_range::integer_bits != std::numeric_limits<int>::max());
+			static constexpr bool is_fraction_constrained = (result_range::fraction_bits != std::numeric_limits<int>::max());
+
+			static constexpr int constrained_integer_bits  = result_range::integer_bits;
+			static constexpr int constrained_fraction_bits = result_range::fraction_bits;
 
 			// Check for rounding mode
-			static constexpr RoundModes rounding = meta::find_if_or< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >::type::value;
+			using rounding_type = typename meta::find_if_or< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >::type;
 
 			// Check for maximum bitcount in intermediates
 			static constexpr int max_size = meta::find_if_or< ArgList, max_size_finder, platform_max_size>::type::value;
@@ -731,32 +778,36 @@ namespace fix {
 
 		// Find the best combination of shifts so the fractional points are aligned,
 		// minimizing shift operations but only if no precision is lost
-		template< typename ArgList, int AI, int AF, bool AS, int AO, typename AT, typename AR, int BI, int BF, bool BS, int BO, typename BT, typename BR >
-		struct add_sub_struct< ArgList, fixed<AI, AF, AS, AO, AT, AR>, fixed<BI, BF, BS, BO, BT, BR> >
+		template< typename ArgList, int AI, int AF, bool AS, typename AT, typename AR, int BI, int BF, bool BS, typename BT, typename BR >
+		struct add_sub_struct< ArgList, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >
 		{
 			// This is a mess!
-			using A = fixed<AI, AF, AS, AO, AT, AR>;
-			using B = fixed<BI, BF, BS, BO, BT, BR>;
+			using A = fixed<AI, AF, AS, AT, AR>;
+			using B = fixed<BI, BF, BS, BT, BR>;
 
 			using parsed_args = add_sub_args< ArgList >;
+
+			using rounding_type = typename parsed_args::rounding_type;
 
 			static constexpr int max_size = parsed_args::max_size_constrained ? parsed_args::max_size : util::max(sizeof(AT),sizeof(BT))*8;
 			using result_range = typename parsed_args::result_range;
 
-			constexpr static bool i_constrained = parsed_args::constrained_integer;
-			constexpr static bool f_constrained = parsed_args::constrained_fraction;
+			constexpr static bool i_constrained = parsed_args::is_integer_constrained;
+			constexpr static bool f_constrained = parsed_args::is_fraction_constrained;
 
-			// Determine lhs and rhs scaling shifts to match radix points (offset difference will be handled in next step)
+			constexpr static int  i_constrained_bits = parsed_args::constrained_integer_bits;
+			constexpr static int  f_constrained_bits = parsed_args::constrained_fraction_bits;
+
+			// Determine lhs and rhs scaling shifts to match radix points
 			constexpr static int exponent_difference = B::fractional_bits - A::fractional_bits;
 
-			constexpr static int a_shift_preliminary = util::max( exponent_difference, 0) + util::min(B::offset - A::offset, 0);
-			constexpr static int b_shift_preliminary = util::max(-exponent_difference, 0) + util::min(A::offset - B::offset, 0);
+			constexpr static int a_shift_preliminary = f_constrained ? (f_constrained_bits - A::fractional_bits) : util::max( exponent_difference, 0);
+			constexpr static int b_shift_preliminary = f_constrained ? (f_constrained_bits - B::fractional_bits) : util::max(-exponent_difference, 0);
 
 			constexpr static bool RS_sum = parsed_args::assume_result_positive ? false : (AS || BS);
 			// if not otherwise expressed by an argument, always assume signed destination range for subtraction
 			constexpr static bool RS_sub = parsed_args::assume_result_positive ? false : true;
 
-			//
 			constexpr static int a_sign_extension = (!AS && BS) ? 1 : 0;
 			constexpr static int b_sign_extension = (!BS && AS) ? 1 : 0;
 
@@ -767,14 +818,17 @@ namespace fix {
 			constexpr static int overshoot  = util::max(util::max((A::low_bits + a_shift_preliminary + a_sign_extension) - max_size, (B::low_bits + b_shift_preliminary + b_sign_extension) - max_size), 0);
 
 			// If custom-dest fraction bits lead to a negative offset, shift both up accordingly 
-			constexpr static int undershoot = f_constrained ? (-util::min(A::radix_pos + a_shift_preliminary - overshoot - result_range::fraction_bits, 0)) : (0);
+			//constexpr static int undershoot = f_constrained ? (-util::min(A::radix_pos + a_shift_preliminary - overshoot - result_range::fraction_bits, 0)) : (0);
 
-			constexpr static int a_shift = a_shift_preliminary - overshoot + undershoot;
-			constexpr static int b_shift = b_shift_preliminary - overshoot + undershoot;
+			constexpr static int a_shift = a_shift_preliminary - overshoot /*+ undershoot*/;
+			constexpr static int b_shift = b_shift_preliminary - overshoot /*+ undershoot*/;
 
 			// need to find out result-type
-			using shifted_a_type = typename A::template scaling_shifted_type<a_shift>;
-			using shifted_b_type = typename B::template scaling_shifted_type<b_shift>;
+			using scaling_a_values = detail::scaling_shift_values<A, a_shift, rounding_type>;
+			using scaling_b_values = detail::scaling_shift_values<B, b_shift, rounding_type>;
+
+			using shifted_a_type = typename scaling_a_values::result_type;
+			using shifted_b_type = typename scaling_b_values::result_type;
 
 			static_assert(shifted_a_type::exponent(0) == shifted_b_type::exponent(0), "My calculations were wrong");
 			static_assert(shifted_a_type::low_bits <= max_size && shifted_b_type::low_bits <= max_size, "Could not fit the calculation.");
@@ -797,8 +851,8 @@ namespace fix {
 			>::min_range_type;
 
 			// Don't eat up more bits than the operands
-			using max_add_range = auto_fixed_range<util::min(util::max(shifted_a_range::bits, shifted_b_range::bits), auto_add_result_range::bits), auto_add_result_range::is_signed>;
-			using max_sub_range = auto_fixed_range<util::min(util::max(shifted_a_range::bits, shifted_b_range::bits), auto_sub_result_range::bits), auto_sub_result_range::is_signed>;
+			using max_add_range = auto_fixed_range<util::min<int>(util::max<int>(shifted_a_range::bits, shifted_b_range::bits), auto_add_result_range::bits), auto_add_result_range::is_signed>;
+			using max_sub_range = auto_fixed_range<util::min<int>(util::max<int>(shifted_a_range::bits, shifted_b_range::bits), auto_sub_result_range::bits), auto_sub_result_range::is_signed>;
 
 			// Saturate calculated ranges into the limited result ranges
 			using sub_result_range = detail::saturate_range_t<auto_sub_result_range, max_sub_range>;
@@ -815,21 +869,19 @@ namespace fix {
 
 			static constexpr int sub_i = i_constrained ?  result_range::integer_bits  : (sub_result_bits - shifted_a_type::radix_pos);
 			static constexpr int sub_f = f_constrained ?  result_range::fraction_bits : (shifted_a_type::radix_pos);
-			static constexpr int sub_o = f_constrained ? (shifted_a_type::radix_pos-sub_f) : util::min(shifted_a_type::offset, shifted_b_type::offset);
-
+		
 			static constexpr int add_i = i_constrained ?  result_range::integer_bits  : (add_result_bits - shifted_a_type::radix_pos);
 			static constexpr int add_f = f_constrained ?  result_range::fraction_bits : (shifted_a_type::radix_pos);
-			static constexpr int add_o = f_constrained ? (shifted_a_type::radix_pos-sub_f) : util::min(shifted_a_type::offset, shifted_b_type::offset);
-
+			
 			using sub_result_type = fixed_auto<sub_i, sub_f, sub_result_range::is_signed, sub_result_range>;
 			using add_result_type = fixed_auto<add_i, add_f, add_result_range::is_signed, add_result_range>;
 
-			constexpr static add_result_type add(A a, B b) {
-				return add_result_type(add_temporary_value_type(a.template scaling_shift<a_shift>().value) + add_temporary_value_type(b.template scaling_shift<b_shift>().value));
+			constexpr static sub_result_type sub(A a, B b) {
+				return sub_result_type(sub_temporary_value_type(scaling_shift<a_shift, rounding_type>(a).value) - sub_temporary_value_type(scaling_shift<b_shift, rounding_type>(b).value));
 			}
 
-			constexpr static sub_result_type sub(A a, B b) {
-				return sub_result_type(sub_temporary_value_type(a.template scaling_shift<a_shift>().value) - sub_temporary_value_type(b.template scaling_shift<b_shift>().value));
+			constexpr static add_result_type add(A a, B b) {
+				return add_result_type(add_temporary_value_type(scaling_shift<a_shift, rounding_type>(a).value) + add_temporary_value_type(scaling_shift<b_shift, rounding_type>(b).value));
 			}
 		};
 	}
@@ -837,16 +889,18 @@ namespace fix {
 #define DEBUG_ADD_SUB( A, B, ... ) \
 	::fix::detail::add_sub_struct< ::fix::meta::list< __VA_ARGS__ >,  std::decay_t<decltype(A)>, std::decay_t<decltype(B)> >
 
-	template< typename... Args, typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
-	constexpr auto add(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
+	template< typename... Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
+	constexpr auto add(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b) ->
+		typename detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::add_result_type
 	{
-		return detail::add_sub_struct< meta::list<Args...>, decltype(a), decltype(b) >::add(a, b);
+		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::add(a, b);
 	}
 
-	template< typename... Args, typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
-	constexpr auto sub(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
+	template< typename... Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
+	constexpr auto sub(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b) ->
+		typename detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::sub_result_type
 	{
-		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AO, AT, AR>, fixed<BI, BF, BS, BO, BT, BR> >::sub(a, b);
+		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::sub(a, b);
 	}
 
 	template< typename T >
@@ -868,20 +922,20 @@ namespace fix {
 	}
 
 	// default operators (no args to ops)
-	template < typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR>
-	constexpr auto operator+(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
+	template < typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR>
+	constexpr auto operator+(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
 		return add<>(a, b);
 	}
 
-	template< typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
-	constexpr auto operator-(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
+	template< typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
+	constexpr auto operator-(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
 		return sub<>(a, b);
 	}
 
-	template< typename AT, int AI, int AF, bool AS, int AO, typename AR, typename BT, int BI, int BF, bool BS, int BO, typename BR >
-	constexpr auto operator*(fixed<AI, AF, AS, AO, AT, AR> a, fixed<BI, BF, BS, BO, BT, BR> b)
+	template< typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
+	constexpr auto operator*(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
 		return mul<>(a, b);
 	}
