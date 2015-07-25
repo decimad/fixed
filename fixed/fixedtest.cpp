@@ -433,8 +433,6 @@ void add_test()
 
 	constexpr auto fum = add<positive, fits<22,0>>(lhs, rhs);
 	constexpr auto value = fum.to<double>();
-
-	std::cout << typeid(decltype(fum)).name() << "\n";
 }
 
 #ifdef _MSC_VER
