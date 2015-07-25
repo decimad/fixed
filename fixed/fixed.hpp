@@ -79,7 +79,7 @@ namespace fix {
 		using value_type_t = typename value_type<Bits, Signed>::type;
 
 		template< int I, int F, bool Signed, typename T>
-		constexpr auto to_fixed(T value)
+		constexpr value_type_t<I + F, Signed> to_fixed(T value)
 		{
 			return static_cast<value_type_t<I + F, Signed>>(util::scaled_exp2<util::RoundModes::Floor>(value, F));
 		}
