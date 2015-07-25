@@ -85,15 +85,15 @@ namespace fix {
 		}
 	}
 
-	template< typename T, T Min, T Max >
+	template< typename T, T A, T B>
 	struct value_range {
 		using value_type = T;
-		SC T min = Min;
-		SC T max = Max;
-		SC bool is_signed = (min < 0) || (max < 0);
-		SC int bits = util::bits_for_range<T, min, max>::value;
+		SC T min = util::min(A,B);
+		SC T max = util::max(A,B);
+		SC bool is_signed    = util::safe_less(A, 0) || util::safe_less(B, 0);
+		SC int  bits         = util::range_bits(min, max);
 		using min_type       = detail::value_type_t<bits, is_signed>;
-		using min_range_type = value_range<min_type, Min, Max>;
+		using min_range_type = value_range<min_type, min, max>;
 	};
 	
 #define RANGE_FROM_VALS(A,B) \
@@ -258,6 +258,11 @@ namespace fix {
 			: value(value_)
 		{}
 
+		template<int Off, typename T, typename R>
+		constexpr fixed(fixed<I, F, S, Off, T, R> other)
+			: value(other.scaling_shift<offset - Off>().value)
+		{
+		}
 
 		template<int Off, typename T, typename R>
 		fixed& operator=(fixed<I, F, S, Off, T, R> other)
@@ -735,7 +740,7 @@ namespace fix {
 
 			using parsed_args = add_sub_args< ArgList >;
 
-			static constexpr int max_size = parsed_args::max_size_constrained ? parsed_args::max_size : sizeof(typename auto_type<AT, BT>::type)*8;
+			static constexpr int max_size = parsed_args::max_size_constrained ? parsed_args::max_size : util::max(sizeof(AT),sizeof(BT))*8;
 			using result_range = typename parsed_args::result_range;
 
 			constexpr static bool i_constrained = parsed_args::constrained_integer;
@@ -779,29 +784,34 @@ namespace fix {
 			using shifted_a_range = typename shifted_a_type::range_type;
 			using shifted_b_range = typename shifted_b_type::range_type;
 
-			using auto_sub_result_range = value_range <
+			using auto_sub_result_range = typename value_range <
 				sub_temporary_type<shifted_a_range, shifted_b_range>,
 				min_sub_result<shifted_a_range, shifted_b_range>::value,
 				max_sub_result<shifted_a_range, shifted_b_range>::value
-			>;
+			>::min_range_type;
 
-			using auto_add_result_range = value_range <
+			using auto_add_result_range = typename value_range <
 				add_temporary_type<shifted_a_range, shifted_b_range>,
 				min_add_result<shifted_a_range, shifted_b_range>::value,
 				max_add_result<shifted_a_range, shifted_b_range>::value
-			>;
+			>::min_range_type;
 
-			using sub_result_range = detail::saturate_range_t<auto_sub_result_range, shifted_a_range>;
+			// Don't eat up more bits than the operands
+			using max_add_range = auto_fixed_range<util::min(util::max(shifted_a_range::bits, shifted_b_range::bits), auto_add_result_range::bits), auto_add_result_range::is_signed>;
+			using max_sub_range = auto_fixed_range<util::min(util::max(shifted_a_range::bits, shifted_b_range::bits), auto_sub_result_range::bits), auto_sub_result_range::is_signed>;
+
+			// Saturate calculated ranges into the limited result ranges
+			using sub_result_range = detail::saturate_range_t<auto_sub_result_range, max_sub_range>;
 			using sub_temporary_value_type = typename sub_result_range::value_type;
 
-			using add_result_range = detail::saturate_range_t<auto_add_result_range, shifted_a_range>;
+			using add_result_range = detail::saturate_range_t<auto_add_result_range, max_add_range>;
 			using add_temporary_value_type = typename add_result_range::value_type;
 
 			using sub_result_value_type = sub_temporary_value_type;
 			static constexpr int sub_result_bits = sub_result_range::bits;
 
 			using add_result_value_type = sub_temporary_value_type;
-			static constexpr int add_result_bits = sub_result_range::bits;
+			static constexpr int add_result_bits = add_result_range::bits;
 
 			static constexpr int sub_i = i_constrained ?  result_range::integer_bits  : (sub_result_bits - shifted_a_type::radix_pos);
 			static constexpr int sub_f = f_constrained ?  result_range::fraction_bits : (shifted_a_type::radix_pos);

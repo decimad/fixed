@@ -122,7 +122,8 @@ namespace fix {
 		constexpr typename std::enable_if< std::is_integral<T>::value, typename std::make_unsigned<T>::type>::type
 			abs2(T value)
 		{
-			return (value >= 0) ? value : -value;
+			using result_type = typename std::make_unsigned<T>::type;
+			return (value >= 0) ? static_cast<result_type>(value) : -static_cast<result_type>(value);
 		}
 
 		template<typename T>

@@ -28,6 +28,7 @@ constexpr auto sine3(FixedType angle)
 
 void sine_test2()
 {
+
 	using namespace fix;
 	CA angle = FIXED_RANGE(-1.0, 1.0, 16)::from(0.1);
 	CA angle_integer = angle.integer_bits;
