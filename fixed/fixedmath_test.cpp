@@ -100,7 +100,7 @@ namespace {
 		static_assert(integer_bits(-32769) == 17, "integer_bits<integral> broken.");
 
 		// check if max values for given type overflow
-		static_assert(integer_bits(unsigned short(65535)) == 16, "integer_bits<integral> broken.");
+		static_assert(integer_bits((unsigned short)65535) == 16, "integer_bits<integral> broken.");
 	}
 
 	void range_bits_test()

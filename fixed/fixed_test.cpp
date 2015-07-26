@@ -137,7 +137,6 @@ namespace {
 
 		CA val5 = util::range_bits(0, -8);
 
-		CA val = UINT_MAX;
 		CA fasf = util::scaled_exp2<util::RoundModes::Floor>(0.0001, 45);
 		CA fasf2 = util::integer_bits(-0.0001);
 

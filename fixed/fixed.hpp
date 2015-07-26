@@ -294,7 +294,7 @@ namespace fix {
 			: value(value_)
 		{}
 
-		template<int OI, int OF, bool OS, typename T, typename R>
+		template<typename T, typename R>
 		constexpr fixed(fixed<I, F, S, T, R> other)
 			: value(other.value)
 		{
@@ -714,7 +714,8 @@ namespace fix {
 	}
 
 	template< typename... Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR>
-	constexpr auto mul(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	constexpr typename detail::mul_struct<meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR>>::result_type
+		mul(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
 		return detail::mul_struct<meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR>>::mul(a, b);
 	}
@@ -945,15 +946,15 @@ namespace fix {
 	::fix::detail::add_sub_struct< ::fix::meta::list< __VA_ARGS__ >,  std::decay_t<decltype(A)>, std::decay_t<decltype(B)> >
 
 	template< typename... Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
-	constexpr auto add(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b) ->
-		typename detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::add_result_type
+	constexpr typename detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::add_result_type
+		add(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
 		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::add(a, b);
 	}
 
 	template< typename... Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
-	constexpr auto sub(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b) ->
-		typename detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::sub_result_type
+	constexpr typename detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::sub_result_type
+		sub(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
 		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::sub(a, b);
 	}
@@ -978,25 +979,29 @@ namespace fix {
 
 	// default operators (no args to ops)
 	template < typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR>
-	constexpr auto operator+(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	constexpr typename detail::add_sub_struct< meta::list<>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::add_result_type
+		operator+(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
 		return add<>(a, b);
 	}
 
 	template< typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
-	constexpr auto operator-(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	constexpr typename detail::add_sub_struct< meta::list<>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::sub_result_type
+	operator-(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
 		return sub<>(a, b);
 	}
 
 	template< typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
-	constexpr auto operator*(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	constexpr typename detail::mul_struct< meta::list<>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::result_type
+	operator*(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
 	{
 		return mul<>(a, b);
 	}
 
 	template< typename FixedType >
-	constexpr auto square(FixedType val)
+	constexpr typename detail::mul_struct< meta::list<positive>, FixedType, FixedType >::result_type
+	square(FixedType val)
 	{
 		return mul<positive>(val, val);
 	}

@@ -575,8 +575,8 @@ namespace fix {
 				// Note, special cases to undo the integer_bits always at least return 1.
 				return
 					max(
-						integer_bits(t) - (is_neg(t) ? 1 : 0),
-						integer_bits(u) - (is_neg(u) ? 1 : 0)
+						integer_bits(abs2(t)) - (is_neg(t) ? 1 : 0),
+						integer_bits(abs2(u)) - (is_neg(u) ? 1 : 0)
 
 
 						//(incr_if_neg(t) == 0) ? (0) : integer_bits(abs2(incr_if_neg(t))),
