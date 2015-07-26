@@ -542,6 +542,7 @@ namespace fix {
 		{
 			// This one proves to be notorically difficult...
 			// (oo ...   1) -> log2_ceil(value+1)
+			// ( 2 ...   1) -> 1
 			// ( 1 ...   0) -> log2_floor(value)
 			// (         0) -> 1
 			// ( 0 ...  -1) -> log2_floor(-value)+2
@@ -549,11 +550,13 @@ namespace fix {
 			// [-2 ... -oo) -> lof2_floor(-value-1)+2
 			return
 				(value == 0) ? 1 : (
-					(value >= T(1)) ? (log2_ceil(value+T(1))) : (
-						(value >= T(0)) ? (log2_floor(value)+1) : (
-							(value > T(-1)) ? (log2_floor(-value)+2) : (
-								(value > T(-2)) ? (1) : (log2_floor(-value-T(1))+2)
-							)		
+					(value >= T(2)) ? (log2_ceil(value)+1) : (
+						(value >= T(1)) ? (1) : (
+							(value >= T(0)) ? (log2_floor(value)+1) : (
+								(value > T(-1)) ? (log2_floor(-value)+2) : (
+									(value > T(-2)) ? (1) : (log2_floor(-value-T(1))+2)
+								)		
+							)
 						)
 					)
 				);
@@ -572,8 +575,12 @@ namespace fix {
 				// Note, special cases to undo the integer_bits always at least return 1.
 				return
 					max(
-						(incr_if_neg(t) == 0) ? (0) : integer_bits(abs2(incr_if_neg(t))),
-						(incr_if_neg(u) == 0) ? (0) : integer_bits(abs2(incr_if_neg(u)))
+						integer_bits(t) - (is_neg(t) ? 1 : 0),
+						integer_bits(u) - (is_neg(u) ? 1 : 0)
+
+
+						//(incr_if_neg(t) == 0) ? (0) : integer_bits(abs2(incr_if_neg(t))),
+						//(incr_if_neg(u) == 0) ? (0) : integer_bits(abs2(incr_if_neg(u)))
 					) 
 					+ (any_neg(t,u) ? 1 : 0);
 			}
