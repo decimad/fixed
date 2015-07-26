@@ -13,18 +13,78 @@ namespace fix {
 
 	namespace util {
 
+		//
+		// abs variations
+		//
+
 		using largest_unsigned_type = unsigned long long;
 		using largest_signed_type   = long long;
 
+		// abs2 will promote the type to unsigned so the resulting value fits in every case
 		template<typename T>
-		constexpr typename std::enable_if<std::is_integral<T>::value, T>::type
+		constexpr enable_if_integral_t<T, make_unsigned_if_integral_t<T>>
+			abs2(T value)
+		{
+			using result_type = make_unsigned_t<T>;
+			return (value >= 0) ? static_cast<result_type>(value) : (static_cast<result_type>(~value + 1u));
+		}
+
+		template<typename T>
+		constexpr typename enable_if_floating_point_t<T, T>
+			abs2(T value)
+		{
+			return (value >= 0) ? value : -value;
+		}
+
+		template< typename T >
+		constexpr T clamp(T value, T min, T max)
+		{
+			return (value > max) ? max : ((value < min) ? min : value);
+		}
+
+		template<typename T>
+		constexpr enable_if_t< std::is_floating_point<T>::value || std::is_signed<T>::value, T>
+			abs(T value)
+		{
+			return (value >= 0) ? value : -value;
+		}
+
+		template<typename T>
+		constexpr enable_if_t< std::is_integral<T>::value && !std::is_signed<T>::value, T>
+			abs(T value)
+		{
+			return value;
+		}
+
+		template<typename T>
+		constexpr enable_if_t<std::is_integral<T>::value && std::is_signed<T>::value, T>
+			safe_abs(T value)
+		{
+			return abs<T>(clamp<T>(value, -std::numeric_limits<T>::max(), std::numeric_limits<T>::max()));
+		}
+
+		template<typename T>
+		constexpr enable_if_t<std::is_unsigned<T>::value || std::is_floating_point<T>::value, T>
+			safe_abs(T value)
+		{
+			return abs(value);
+		}
+
+		template<typename T>
+		constexpr T trunc(T value)
+		{
+			return static_cast<T>(static_cast<largest_signed_type>((value)));
+		}
+
+		template<typename T>
+		constexpr enable_if_integral_t<T, T>
 			exp2(unsigned int exponent)
 		{
 			return T(1) << exponent;
 		}
 
 		template<typename T>
-		constexpr typename std::enable_if<std::is_floating_point<T>::value, T>::type
+		constexpr enable_if_floating_point_t<T, T>
 			exp2(unsigned int exponent)
 		{
 			return (exponent == 0) ? 1 : (exp2<T>(exponent - 1) * 2);
@@ -43,18 +103,18 @@ namespace fix {
 		}
 
 		template< typename T>
-		constexpr typename std::enable_if<std::is_integral<T>::value, int>::type
+		constexpr enable_if_integral_t<T, int>
 			log2_floor(T value)
 		{
 			return (value <= 1) ? 0 : (1 + log2_floor(value >> 1));
 		}
 
 		template<typename T>
-		constexpr typename std::enable_if<std::is_integral<T>::value, int>::type
+		constexpr enable_if_integral_t<T, int>
 			log2_ceil(T value)
 		{
 			return
-				(value <= 1) ? 0 :
+				(value == 1) ? 0 :
 				(((value & 1) && (value > 1)) ? (2 + log2_floor(value >> 1)) : (1 + log2_ceil(value >> 1)));
 		}
 
@@ -77,80 +137,54 @@ namespace fix {
 				);
 		}
 
+		namespace detail {
+
+			template< typename T >
+			constexpr int log2_floor_float(T value) {
+				return 
+					(value == T(2)) ? 1 :
+						((value > T(2)) ? (1 + log2_floor_float(value / 2)) : 0);
+			}
+
+			template< typename T >
+			constexpr int log2_ceil_float(T value) {
+				return 
+					(value == T(2)) ? 1 :
+						((value > T(2)) ? (1 + log2_ceil_float(value / 2)) : 1);
+			}
+
+		}
+
 		template<typename T>
-		constexpr typename std::enable_if<std::is_floating_point<T>::value, int>::type
+		constexpr enable_if_floating_point_t< T, int >
 			log2_floor(T value)
 		{
-			return log2_floor(largest_unsigned_type(floor(value)));
+			return
+				(value == T(1)) ? 0 :
+					((value >= T(1)) ? detail::log2_floor_float(value) : (-detail::log2_ceil_float(T(1) / value)));
+		}
+
+		template<typename T>
+		constexpr enable_if_floating_point_t< T, int >
+			log2_ceil(T value)
+		{
+			return 
+				(value == T(1)) ? 0 :
+					((value > T(1)) ? detail::log2_ceil_float(value) : (-detail::log2_floor_float(T(1) / value)));
 		}
 
 		template< typename T >
-		constexpr typename std::enable_if<std::is_integral<T>::value, T>::type
+		constexpr enable_if_integral_t<T, T>
 			round(T value)
 		{
 			return value;
 		}
 
 		template< typename T >
-		constexpr typename std::enable_if<std::is_floating_point<T>::value, T>::type
+		constexpr enable_if_floating_point_t< T, T >
 			round(T value)
 		{
 			return static_cast<T>(static_cast<largest_signed_type>(value + sign(value)*T(0.5)));
-		}
-
-		template<typename T>
-		constexpr typename std::enable_if<std::is_floating_point<T>::value, int>::type
-			log2_ceil(T value)
-		{
-			return (value >= 1) ? log2_ceil(largest_unsigned_type(ceil(value))) : -log2_floor(largest_unsigned_type(floor(1.0/value)));
-		}
-
-		template< typename T >
-		constexpr T clamp(T value, T min, T max)
-		{
-			return (value > max) ? max : ((value < min) ? min : value);
-		}
-
-		template<typename T>
-		constexpr typename std::enable_if< std::is_floating_point<T>::value || std::is_signed<T>::value, T>::type
-			abs(T value)
-		{
-			return (value >= 0) ? value : -value;
-		}
-
-		template<typename T>
-		constexpr typename std::enable_if< std::is_integral<T>::value, typename std::make_unsigned<T>::type>::type
-			abs2(T value)
-		{
-			using result_type = typename std::make_unsigned<T>::type;
-			return (value >= 0) ? static_cast<result_type>(value) : (static_cast<result_type>(~value+1u));
-		}
-
-		template<typename T>
-		constexpr typename std::enable_if< std::is_integral<T>::value && !std::is_signed<T>::value, T>::type
-			abs(T value)
-		{
-			return value;
-		}
-
-		template<typename T>
-		constexpr typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, T>::type
-			safe_abs(T value)
-		{
-			return abs<T>(clamp<T>(value, -std::numeric_limits<T>::max(), std::numeric_limits<T>::max()));
-		}
-
-		template<typename T>
-		constexpr typename std::enable_if<std::is_unsigned<T>::value || std::is_floating_point<T>::value, T>::type
-			safe_abs(T value)
-		{
-			return abs(value);
-		}
-
-		template<typename T>
-		constexpr T trunc(T value)
-		{
-			return static_cast<T>(static_cast<largest_signed_type>((value)));
 		}
 
 		template<typename T>
@@ -192,17 +226,6 @@ namespace fix {
 
 		}
 
-		template< typename T, int Bits >
-		struct limits {
-			static constexpr T max = detail::maxbits<T, Bits>::value;
-			static constexpr T min = std::is_signed<T>::value ? (~(1 << (Bits - 1)) + 1) : 0;
-		};
-
-		template< typename T, int Bits, typename S >
-		constexpr bool test_overflow(S value) {
-			return sign(static_cast<T>(value)) == sign(value) && static_cast<T>(value) <= limits<T, Bits>::max && static_cast<T>(value) >= limits<T, Bits>::min;
-		}
-
 		//
 		// Rounding (note I have to somehow emulate business for floats, since visual c++ doesn't define floating rounding constexpr :( )
 		//          Although this can be very inefficient, since it's only ever called for constexpr calls
@@ -219,70 +242,70 @@ namespace fix {
 		};
 
 		template< bool NoMask = false, typename T >
-		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
+		constexpr enable_if_integral_t< T, T >
 			ceil(T value, int digits)
 		{
 			return (NoMask ? (value)  : (value & ~bitmask<T>(digits))) + ((value & bitmask<T>(digits)) ? (T(1) << digits) : 0);
 		}
 
 		template< bool NoMask = false, typename T >
-		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
+		constexpr enable_if_integral_t< T, T >
 			floor(T value, int digits)
 		{
 			return NoMask ? value : (value & ~bitmask<T>(digits));
 		}
 
 		template< bool NoMask = false, typename T >
-		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
+		constexpr enable_if_integral_t< T, T >
 			towards_zero(T value, int digits)
 		{
 			return (value > 0) ? floor<NoMask>(value, digits) : ceil<NoMask>(value, digits);
 		}
 
 		template< typename T >
-		constexpr typename std::enable_if< std::is_floating_point<T>::value, T >::type
+		constexpr enable_if_floating_point_t< T, T >
 			towards_zero(T value)
 		{
 			return (value > 0) ? floor(value) : ceil(value);
 		}
 
 		template< bool NoMask = false, typename T >
-		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
+		constexpr enable_if_integral_t< T, T >
 			towards_infinity(T value, int digits)
 		{
 			return (value >= 0) ? ceil<NoMask>(value, digits) : floor<NoMask>(value, digits);
 		}
 
 		template< typename T >
-		constexpr typename std::enable_if< std::is_floating_point<T>::value, T >::type
+		constexpr enable_if_floating_point_t< T, T >
 			towards_infinity(T value)
 		{
 			return (value >= 0) ? ceil(value) : floor(value);
 		}
 
 		template< bool NoMask = false, typename T >
-		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
+		constexpr enable_if_integral_t< T, T >
 			nearest_up(T value, int digits)
 		{
 			return ((value & bitmask<T>(digits)) >= (1 << (digits - 1))) ? ceil<NoMask>(value, digits) : floor<NoMask>(value, digits);
 		}
 
 		template< typename T >
-		constexpr typename std::enable_if< std::is_floating_point<T>::value, T >::type
+		constexpr enable_if_floating_point_t< T, T >
 			nearest_up(T value)
 		{
 			return (value - floor(value) >= 0.5) ? ceil(value) : floor(value);
 		}
 
 		template< bool NoMask = false, typename T >
-		constexpr typename std::enable_if< std::is_integral<T>::value, T >::type
+		constexpr enable_if_integral_t< T, T >
 			nearest_down(T value, int digits)
 		{
 			return ((value & bitmask<T>(digits)) <= (T(1) << (digits - 1))) ? floor<NoMask>(value, digits) : ceil<NoMask>(value, digits);
 		}
 
 		template< typename T >
-		constexpr typename std::enable_if< std::is_floating_point<T>::value, T >::type
+		constexpr enable_if_floating_point_t< T, T >
 			nearest_down(T value)
 		{
 			return (value - floor(value) <= 0.5) ? floor(value) : ceil(value);
@@ -437,7 +460,7 @@ namespace fix {
 		//
 
 		template< RoundModes Mode = RoundModes::Floor, typename T >
-		constexpr typename std::enable_if<std::is_floating_point<T>::value, T>::type
+		constexpr enable_if_floating_point_t<T, T>
 			scaled_exp2(T value, int exponent)
 		{
 			return (exponent >= 0) ? 
@@ -445,7 +468,7 @@ namespace fix {
 		}
 
 		template<RoundModes Mode = RoundModes::Floor, typename T>
-		constexpr typename std::enable_if<std::is_integral<T>::value, T>::type
+		constexpr enable_if_integral_t<T, T>
 			scaled_exp2(T value, int exponent)
 		{
 			return (exponent >= 0) ?
@@ -476,24 +499,6 @@ namespace fix {
 		
 		}
 
-		template<typename T, T Value>
-		struct bits_for_value {
-			static constexpr int value = detail::bits_for_value_helper<T, Value, std::numeric_limits<T>::min(), std::numeric_limits<T>::max()>::value;
-		};
-
-		template<typename T, T a, T b>
-		struct bits_for_range
-		{
-			static constexpr T min = util::min(a, b);
-			static constexpr T max = util::max(a, b);
-
-			static constexpr int min_bits = bits_for_value<T, min>::value;
-			static constexpr int max_bits = bits_for_value<T, max>::value;
-
-			static constexpr int value = util::max(min_bits, max_bits) + ((min < 0 || max < 0) ? 1 : 0);
-		};
-
-
 		template<typename T>
 		constexpr bool is_neg(T val) {
 			return !std::is_unsigned<T>::value && (val < 0);
@@ -515,60 +520,71 @@ namespace fix {
 			template< typename T >
 			constexpr int log2_ceil_incr(T value)
 			{
-				return (value == std::numeric_limits<T>::max()) ? (sizeof(T) * 8 + 1) : log2_ceil(value + 1);
+				return (value == std::numeric_limits<T>::max()) ? (sizeof(T) * 8) : log2_ceil(value+1);
 			}
+
+		}
+
+		template<typename T>
+		constexpr enable_if_integral_t<T, int>
+			integer_bits(T value)
+		{
+			return 
+				(value == 0) ? 1 : (
+					(value > T(0)) ? 
+						detail::log2_ceil_incr(abs2(value)) : (log2_ceil(abs(value))+1)
+				);
+		}
+
+		template<typename T>
+		constexpr enable_if_floating_point_t<T, int>
+			integer_bits(T value)
+		{
+			// This one proves to be notorically difficult...
+			// (oo ...   1) -> log2_ceil(value+1)
+			// ( 1 ...   0) -> log2_floor(value)
+			// (         0) -> 1
+			// ( 0 ...  -1) -> log2_floor(-value)+2
+			// [-1 ...  -2) -> 1
+			// [-2 ... -oo) -> lof2_floor(-value-1)+2
+			return
+				(value == 0) ? 1 : (
+					(value >= T(1)) ? (log2_ceil(value+T(1))) : (
+						(value >= T(0)) ? (log2_floor(value)+1) : (
+							(value > T(-1)) ? (log2_floor(-value)+2) : (
+								(value > T(-2)) ? (1) : (log2_floor(-value-T(1))+2)
+							)		
+						)
+					)
+				);
+		}
+
+		namespace detail {
 
 			template< typename T >
-			constexpr int integer_bits_integral(T value)
+			constexpr T incr_if_neg(T val)
 			{
-				using unsigned_t = typename std::make_unsigned<T>::type;
-				return is_neg(value) ? (log2_ceil(abs2(value)) + 1) : log2_ceil_incr(unsigned_t(value));
+				return is_neg(val) ? (val + T(1)) : val;
 			}
 
-			template<typename S, typename U>
-			constexpr int range_bits_integral(S s, U u)
-			{
-				using unsigned_s = typename std::make_unsigned<S>::type;
-				using unsigned_u = typename std::make_unsigned<U>::type;
-
+			template< typename T, typename U >
+			constexpr int range_bits2(T t, U u) {
+				// Note, special cases to undo the integer_bits always at least return 1.
 				return
-					(is_neg(s) || is_neg(u)) ?
-					(util::max(
-						is_neg(s) ? log2_ceil(abs2(s)) : log2_ceil_incr(unsigned_s(s)),
-						is_neg(u) ? log2_ceil(abs2(u)) : log2_ceil_incr(unsigned_u(u))
-						)
-						+ 1
-					)
-					:
-					(util::max(
-						log2_ceil_incr(unsigned_s(s)),
-						log2_ceil_incr(unsigned_u(u))
-						)
-					);
+					max(
+						(incr_if_neg(t) == 0) ? (0) : integer_bits(abs2(incr_if_neg(t))),
+						(incr_if_neg(u) == 0) ? (0) : integer_bits(abs2(incr_if_neg(u)))
+					) 
+					+ (any_neg(t,u) ? 1 : 0);
 			}
 
-			template<typename T, bool Value = std::is_integral<T>::value >
-			struct to_integral
-			{
-				static constexpr T cast(T value) { return value; };
-			};
-
-			template<typename T>
-			struct to_integral<T, false> {
-				static constexpr largest_signed_type cast(T value) { return static_cast<largest_signed_type>(value); }
-			};
 		}
 
 		template<typename S, typename U>
 		constexpr int range_bits(S s, U u)
 		{
-			return detail::range_bits_integral(detail::to_integral<S>::cast(s), detail::to_integral<U>::cast(u));
-		}
-
-		template<typename T>
-		constexpr int integer_bits(T value)
-		{
-			return detail::integer_bits_integral(detail::to_integral<T>::cast(value));
+			return (s == 0) ? integer_bits(u) :
+				((u == 0) ? integer_bits(s) : detail::range_bits2(s, u));
 		}
 
 	}

@@ -53,12 +53,14 @@ namespace fix {
 		template< typename T, bool Signed = std::is_signed<T>::value >
 		struct promoted
 		{
-			using bare_type = typename std::conditional< sizeof(T) == 1, short,
-				typename std::conditional< sizeof(T) == 2, int,
-				typename std::conditional< sizeof(T) == 4, int64, int64>::type
-				>::type >::type;
+			using bare_type =
+				util::conditional_t< sizeof(T) == 1, short,
+					util::conditional_t< sizeof(T) == 2, int,
+						util::conditional_t< sizeof(T) == 4, int64, int64>
+					>
+				>;
 
-			using type = typename std::conditional< Signed, typename std::make_signed<bare_type>::type, typename std::make_unsigned<bare_type>::type>::type;
+			using type = util::conditional_t< Signed, util::make_signed_t<bare_type>, util::make_unsigned_t<bare_type>>;
 		};
 
 		template< typename T, bool Signed = std::is_signed<T>::value >
@@ -67,16 +69,16 @@ namespace fix {
 		template< typename T, T value >
 		constexpr auto promote_if_max()
 		{
-			return typename std::conditional<value == std::numeric_limits<T>::max(), promoted_t<T>, T>::type(value);
+			return util::conditional_t<value == std::numeric_limits<T>::max(), promoted_t<T>, T>(value);
 		}
 
 		template< typename T1, typename T2 >
 		struct fitting_type {
-			using type = typename std::conditional<  
+			using type = util::conditional_t<  
 				sizeof(T1) == sizeof(T2) && !(std::is_signed<T1>::value == std::is_signed<T2>::value),
 				promoted_t<T1, true>,
-				typename std::conditional<(sizeof(T1)>sizeof(T2)), T1, T2>::type
-			>::type;
+				util::conditional_t<(sizeof(T1)>sizeof(T2)), T1, T2>
+			>;
 		};
 
 		template< typename T1, typename T2 >
@@ -84,23 +86,26 @@ namespace fix {
 
 		template< int Bits, bool Signed >
 		struct value_type {
-
-			using raw_type = typename std::conditional< (Bits <= 8), char,
-				typename std::conditional<(Bits <= 16), short,
-				typename std::conditional< (Bits <= 32), int, int64 >::type>::type >::type;
-
-			using type = typename std::conditional<Signed, typename std::make_signed<raw_type>::type, typename std::make_unsigned<raw_type>::type>::type;
-
+		private:
+			using raw_type =
+				util::conditional_t< (Bits <= 8), int8,
+					util::conditional_t< (Bits <= 16), int16,
+						util::conditional_t< (Bits <= 32), int32, int64 >
+					>
+				>;
+		public:
+			using type = util::conditional_t<Signed, util::make_signed_t<raw_type>, util::make_unsigned_t<raw_type>>;
 		};
 
 		template< int Bits, bool Signed >
 		using value_type_t = typename value_type<Bits, Signed>::type;
 
-		template< int I, int F, bool Signed, typename T>
+		template< int I, int F, bool Signed, typename Rounding = rounding::floor, typename T>
 		constexpr value_type_t<I + F, Signed> to_fixed(T value)
 		{
-			return static_cast<value_type_t<I + F, Signed>>(util::scaled_exp2<util::RoundModes::Floor>(value, F));
+			return static_cast<value_type_t<I + F, Signed>>(util::scaled_exp2<Rounding::value>(value, F));
 		}
+
 	}
 
 	template< typename T, T A, T B>
@@ -130,13 +135,13 @@ namespace fix {
 		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed>>
 		constexpr ValueType max_value()
 		{
-			return Signed ? ValueType(util::bitmask<typename std::make_unsigned<ValueType>::type>(Bits-1)) : ValueType(util::bitmask<ValueType>(Bits));
+			return Signed ? ValueType(util::bitmask<util::make_unsigned_t<ValueType>>(Bits-1)) : ValueType(util::bitmask<ValueType>(Bits));
 		}
 
 		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed> >
 		constexpr ValueType min_value()
 		{
-			return Signed ? ValueType(~util::bitmask<typename std::make_unsigned<ValueType>::type>(Bits-1)) : ValueType(0);
+			return Signed ? ValueType(~util::bitmask<util::make_unsigned_t<ValueType>>(Bits-1)) : ValueType(0);
 		}
 
 		template< int Bits, bool Signed, typename ValueType = value_type_t<Bits, Signed> >
@@ -182,7 +187,7 @@ namespace fix {
 			using destination_value_type = value_type_t< I + F + Shift, S >;
 
 			// We can potentially be much smarter here...
-			using precast_type = typename std::conditional< (sizeof(destination_value_type)>sizeof(ValueType)) && (Shift > 0), destination_value_type, ValueType >::type;
+			using precast_type = util::conditional_t< (sizeof(destination_value_type)>sizeof(ValueType)) && (Shift > 0), destination_value_type, ValueType >;
 			using postcast_type = destination_value_type;
 
 			static constexpr int precast_bits = sizeof(precast_type) * 8;
@@ -211,7 +216,7 @@ namespace fix {
 			using destination_value_type = value_type_t< I + F + Shift, S >;
 
 			// We can potentially be much smarter here...
-			using precast_type  = typename std::conditional< (sizeof(destination_value_type)>sizeof(ValueType)) && (Shift > 0), destination_value_type, ValueType >::type;
+			using precast_type  = util::conditional_t< (sizeof(destination_value_type)>sizeof(ValueType)) && (Shift > 0), destination_value_type, ValueType >;
 			using postcast_type = destination_value_type;
 
 			static constexpr int precast_bits = sizeof(precast_type) * 8;
@@ -366,8 +371,7 @@ namespace fix {
 		{
 			// Need to be more sophisticated here... detect powers of 2 and such which make negative integers or fractions possible (for constants)
 			return
-				//( util::test_overflow<value_type, data_bits>(util::round(util::scaled_exp2(value, -scaling))) ) ?
-				fixed(static_cast<value_type>(util::scaled_exp2<RoundingWrapper::value>(value, -scaling))) /*: (throw std::logic_error("Out of Bounds."))*/;
+				fixed(static_cast<value_type>(util::scaled_exp2<RoundingWrapper::value>(value, -scaling)));
 		}
 
 		template<typename U, typename RoundingWrapper = rounding::floor>
@@ -516,9 +520,9 @@ namespace fix {
 
 		template< typename A, typename B >
 		struct auto_type {
-			using intermediate = typename std::conditional< (sizeof(A) >= sizeof(B)), A, B > ::type;
+			using intermediate = util::conditional_t< (sizeof(A) >= sizeof(B)), A, B >;
 			using type = 
-				typename std::conditional< std::is_signed<A>::value || std::is_signed<B>::value, typename std::make_signed<intermediate>::type, typename std::make_unsigned<intermediate>::type >::type;
+				util::conditional_t< std::is_signed<A>::value || std::is_signed<B>::value, util::make_signed_t<intermediate>, util::make_unsigned_t<intermediate>>;
 		};
 
 		template< typename Args, typename Nom, typename Denom >
@@ -582,25 +586,29 @@ namespace fix {
 			static constexpr bool assume_result_positive = meta::contains< ArgList, positive >::value;
 
 			// Check for contrained result range
-			using result_range = typename meta::find_if_or< ArgList, fits_finder, fits<std::numeric_limits<int>::max()> >::type;
+			using result_range = meta::find_if_or_t< ArgList, fits_finder, fits<std::numeric_limits<int>::max()> >;
 			static constexpr bool constrained_integer = (result_range::integer_bits != std::numeric_limits<int>::max());
 			static constexpr bool constrained_fraction = (result_range::fraction_bits != std::numeric_limits<int>::max());
 
 			// Check for rounding mode
-			using rounding_type = typename meta::find_if_or< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >::type;
+			using rounding_type = meta::find_if_or_t< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >;
 
 			// Check for maximum bitcount in intermediates
-			static constexpr int max_size = meta::find_if_or< ArgList, max_size_finder, platform_max_size>::type::value;
+			static constexpr int max_size = meta::find_if_or_t< ArgList, max_size_finder, platform_max_size>::value;
 
 			static_assert(max_size <= platform_max_size::value, "You are exceeding your platform's maximum bitcount.");
 		};
 
 		template< typename RangeA, typename RangeB >
-		using mul_result_type = detail::value_type_t<(sizeof(typename RangeA::value_type) + sizeof(typename RangeB::value_type)) * 8, std::is_signed<typename RangeA::value_type>::value || std::is_signed<typename RangeB::value_type>::value >;
+		using mul_result_type_t =
+			detail::value_type_t<
+				(sizeof(typename RangeA::value_type) + sizeof(typename RangeB::value_type)) * 8,
+				std::is_signed<typename RangeA::value_type>::value || std::is_signed<typename RangeB::value_type>::value
+			>;
 
-		template< typename RangeA, typename RangeB, typename result_type = mul_result_type<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB, typename result_type = mul_result_type_t<RangeA, RangeB> >
 		struct max_mul_result {
-			SC auto value = util::max(
+			SC result_type value = util::max(
 				result_type(RangeA::max) * RangeB::max,
 				result_type(RangeA::max) * RangeB::min,
 				result_type(RangeA::min) * RangeB::max,
@@ -608,9 +616,9 @@ namespace fix {
 				);
 		};
 
-		template< typename RangeA, typename RangeB, typename result_type = mul_result_type<RangeA,RangeB> >
+		template< typename RangeA, typename RangeB, typename result_type = mul_result_type_t<RangeA,RangeB> >
 		struct min_mul_result {
-			SC auto value = util::min(
+			SC result_type value = util::min(
 				result_type(RangeA::max) * RangeB::max,
 				result_type(RangeA::max) * RangeB::min,
 				result_type(RangeA::min) * RangeB::max,
@@ -619,7 +627,7 @@ namespace fix {
 		};
 
 		template< typename RangeA, typename RangeB >
-		using mul_result_range = value_range< mul_result_type<RangeA, RangeB>, min_mul_result<RangeA, RangeB>::value, max_mul_result<RangeA, RangeB>::value >;
+		using mul_result_range_t = value_range< mul_result_type_t<RangeA, RangeB>, min_mul_result<RangeA, RangeB>::value, max_mul_result<RangeA, RangeB>::value >;
 
 		template< typename Args, typename Nom, typename Denom >
 		struct mul_struct;
@@ -635,7 +643,7 @@ namespace fix {
 
 			// the automatic result value type, if not otherwise constrained by user
 			using result_value_type = typename auto_type<AT, BT>::type;
-			using range = mul_result_range<AR, BR>;
+			using range = mul_result_range_t<AR, BR>;
 			using intermediate_type = typename range::min_type;
 
 			using rounding_type = typename parsed_args::rounding_type;
@@ -725,7 +733,7 @@ namespace fix {
 			static constexpr bool assume_result_positive = meta::contains< ArgList, positive >::value;
 
 			// Check for contrained result range
-			using result_range = typename meta::find_if_or< ArgList, fits_finder, fits<std::numeric_limits<int>::max()> >::type;
+			using result_range = meta::find_if_or_t< ArgList, fits_finder, fits<std::numeric_limits<int>::max()> >;
 			static constexpr bool is_integer_constrained  = (result_range::integer_bits != std::numeric_limits<int>::max());
 			static constexpr bool is_fraction_constrained = (result_range::fraction_bits != std::numeric_limits<int>::max());
 
@@ -733,80 +741,88 @@ namespace fix {
 			static constexpr int constrained_fraction_bits = result_range::fraction_bits;
 
 			// Check for rounding mode
-			using rounding_type = typename meta::find_if_or< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >::type;
+			using rounding_type = meta::find_if_or_t< ArgList, meta::integral_constant_finder<RoundModes>, rounding::floor >;
 
 			// Check for maximum bitcount in intermediates
 			static constexpr int max_size = meta::find_if_or< ArgList, max_size_finder, platform_max_size>::type::value;
-			static constexpr bool max_size_constrained = !std::is_same< typename meta::find_if<ArgList, max_size_finder>::type, meta::void_type >::value;
+			static constexpr bool max_size_constrained = !std::is_same< meta::find_if_t<ArgList, max_size_finder>, meta::void_type >::value;
 
 			static_assert(max_size <= platform_max_size::value, "You are exceeding the platform's maximum bitcount.");
 		};
 
 		template< typename RangeA, typename RangeB >
-		using sub_result_type = detail::value_type_t<
+		using sub_result_type_t = detail::value_type_t<
 			util::min<int>(
 				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type))*8,
 				64
 				), true>;
 
 		template< typename RangeA, typename RangeB >
-		using sub_temporary_type = detail::value_type_t<
+		using sub_temporary_type_t = detail::value_type_t<
 			util::min<int>(
 				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type)) * 8 + 1,
 				64
 				), true>;
 
-		template< typename RangeA, typename RangeB, typename result_type = sub_temporary_type<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB, typename res_type = sub_result_type_t<RangeA,RangeB>, typename temp_type = sub_temporary_type_t<RangeA, RangeB> >
 		struct max_sub_result {
-			SC auto value = util::max(
-				result_type(RangeA::max) - RangeB::max,
-				result_type(RangeA::max) - RangeB::min,
-				result_type(RangeA::min) - RangeB::max,
-				result_type(RangeA::min) - RangeB::min
-				);
+			SC res_type value = static_cast<res_type>(
+				util::max(
+					temp_type(RangeA::max) - RangeB::max,
+					temp_type(RangeA::max) - RangeB::min,
+					temp_type(RangeA::min) - RangeB::max,
+					temp_type(RangeA::min) - RangeB::min
+				)
+			);
 		};
 
-		template< typename RangeA, typename RangeB, typename result_type = sub_temporary_type<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB, typename res_type = sub_result_type_t<RangeA, RangeB>, typename temp_type = sub_temporary_type_t<RangeA, RangeB> >
 		struct min_sub_result {
-			SC auto value = util::min(
-				result_type(RangeA::max) - RangeB::max,
-				result_type(RangeA::max) - RangeB::min,
-				result_type(RangeA::min) - RangeB::max,
-				result_type(RangeA::min) - RangeB::min
-				);
+			SC res_type value = static_cast<res_type>(
+				util::min(
+					temp_type(RangeA::max) - RangeB::max,
+					temp_type(RangeA::max) - RangeB::min,
+					temp_type(RangeA::min) - RangeB::max,
+					temp_type(RangeA::min) - RangeB::min
+				)
+			);
 		};
 
 		template< typename RangeA, typename RangeB >
-		using add_result_type = detail::value_type_t<
-			util::min<int>(
-				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type))*8,
-				64
-				), true>;
+		using add_result_type_t = detail::value_type_t<
+			util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type))*8,		
+			std::is_signed<typename RangeA::min_type>::value || std::is_signed<typename RangeB::min_type>::value	
+		>;
 
 		template< typename RangeA, typename RangeB >
-		using add_temporary_type = detail::value_type_t<
+		using add_temporary_type_t = detail::value_type_t<
 			util::min<int>(
-				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type)) * 8 + 1,
-				64
-				), true>;
+				util::max<int>(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type)
+					) * 8 + 1, 64), 
+			std::is_signed<typename RangeA::min_type>::value || std::is_signed<typename RangeB::min_type>::value 
+		>;
 
-		template< typename RangeA, typename RangeB, typename result_type = add_temporary_type<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB, typename res_type = add_result_type_t<RangeA, RangeB>, typename temp_type = add_temporary_type_t<RangeA, RangeB> >
 		struct max_add_result {
-			SC auto value = util::max(
-				result_type(RangeA::max) + RangeB::max,
-				result_type(RangeA::max) + RangeB::min,
-				result_type(RangeA::min) + RangeB::max,
-				result_type(RangeA::min) + RangeB::min
+			SC res_type value = static_cast<res_type>(
+				util::max(
+					temp_type(RangeA::max) + RangeB::max,
+					temp_type(RangeA::max) + RangeB::min,
+					temp_type(RangeA::min) + RangeB::max,
+					temp_type(RangeA::min) + RangeB::min
+					)
 				);
 		};
 
-		template< typename RangeA, typename RangeB, typename result_type = add_temporary_type<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB, typename res_type = add_result_type_t<RangeA, RangeB>, typename temp_type = add_temporary_type_t<RangeA, RangeB> >
 		struct min_add_result {
-			SC auto value = util::min(
-				result_type(RangeA::max) + RangeB::max,
-				result_type(RangeA::max) + RangeB::min,
-				result_type(RangeA::min) + RangeB::max,
-				result_type(RangeA::min) + RangeB::min
+			SC res_type value = static_cast<res_type>(
+				util::min(
+					temp_type(RangeA::max) + RangeB::max,
+					temp_type(RangeA::max) + RangeB::min,
+					temp_type(RangeA::min) + RangeB::max,
+					temp_type(RangeA::min) + RangeB::min
+					)
 				);
 		};
 
@@ -848,8 +864,8 @@ namespace fix {
 			constexpr static int a_sign_extension = (!AS && BS) ? 1 : 0;
 			constexpr static int b_sign_extension = (!BS && AS) ? 1 : 0;
 
-			using a_extended_type = typename std::conditional<(!AS && BS), typename std::make_signed<typename A::value_type>::type, typename A::value_type>::type;
-			using b_extended_type = typename std::conditional<(!BS && AS), typename std::make_signed<typename B::value_type>::type, typename B::value_type>::type;
+			using a_extended_type = util::conditional_t<(!AS && BS), util::make_signed_t<typename A::value_type>, typename A::value_type>;
+			using b_extended_type = util::conditional_t<(!BS && AS), util::make_signed_t<typename B::value_type>, typename B::value_type>;
 			
 			// If either side is overshooting the maximum bit size, shift both down accordingly
 			constexpr static int overshoot  = util::max(util::max((A::low_bits + a_shift_preliminary + a_sign_extension) - max_size, (B::low_bits + b_shift_preliminary + b_sign_extension) - max_size), 0);
@@ -876,13 +892,13 @@ namespace fix {
 			using shifted_b_range = typename shifted_b_type::range_type;
 
 			using auto_sub_result_range = typename value_range <
-				sub_temporary_type<shifted_a_range, shifted_b_range>,
+				sub_result_type_t<shifted_a_range, shifted_b_range>,
 				min_sub_result<shifted_a_range, shifted_b_range>::value,
 				max_sub_result<shifted_a_range, shifted_b_range>::value
 			>::min_range_type;
 
 			using auto_add_result_range = typename value_range <
-				add_temporary_type<shifted_a_range, shifted_b_range>,
+				sub_result_type_t<shifted_a_range, shifted_b_range>,
 				min_add_result<shifted_a_range, shifted_b_range>::value,
 				max_add_result<shifted_a_range, shifted_b_range>::value
 			>::min_range_type;
@@ -955,7 +971,7 @@ namespace fix {
 	template<int64 ConstrainedMax, int64 ConstrainedMin=0, typename T>
 	constexpr auto integer_range(T value)
 	{
-		return fixed<util::bits_for_range<int64, ConstrainedMax, ConstrainedMin>::value, 0, std::is_signed<T>::value>(value);
+		return fixed<util::range_bits(ConstrainedMax, ConstrainedMin), 0, std::is_signed<T>::value>(value);
 	}
 
 	// default operators (no args to ops)
@@ -987,7 +1003,7 @@ namespace fix {
 
 // internal macro
 #define FIXED_RANGE_FROM_VALS(I,F,A,B) \
-	typename ::fix::value_range<::fix::detail::value_type_t<(I)+(F), ::fix::util::any_neg(A,B)>, ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B)>(A), ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B)>(B)>::min_range_type
+	typename ::fix::value_range<::fix::detail::value_type_t<(I)+(F), ::fix::util::any_neg(A,B)>, ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B), ::fix::rounding::floor>(::fix::util::mixed_min(A,B)), ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B), ::fix::rounding::ceil>(::fix::util::mixed_max(A,B))>::min_range_type
 
 // fixed type of reals ranging from A to B with given fraction bits (precision)
 #define FIXED_RANGE_P(A,B,Precision) \

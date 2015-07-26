@@ -10,10 +10,11 @@
 template< int a, int b >
 struct some_template {};
 
-
-
 void meta_test()
 {
 	using namespace fix;
+
+	constexpr auto val = util::mixed_min(-4.4, 15123553);
+
 
 }

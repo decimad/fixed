@@ -7,6 +7,7 @@
 #define FIXED_FIXEDMETA_HPP__
 
 #include <type_traits>
+#include <fixed/fixedutil.hpp>
 
 namespace fix {
 
@@ -17,6 +18,9 @@ namespace fix {
 
 		template< typename List, typename Functor>
 		struct find_if;
+
+		template< typename List, typename Functor >
+		using find_if_t = typename find_if<List, Functor>::type;
 
 		struct void_type {};
 
@@ -38,7 +42,7 @@ namespace fix {
 		template< typename T0, typename... Types, typename Functor>
 		struct find_if< list<T0, Types...>, Functor > {
 			using applied = typename Functor::template apply<T0>;
-			using type = typename std::conditional<applied::value, typename applied::type, typename find_if< list<Types...>, Functor >::type>::type;
+			using type = util::conditional_t<applied::value, typename applied::type, find_if_t< list<Types...>, Functor >>;
 		};
 
 		template< typename Functor >
@@ -50,9 +54,12 @@ namespace fix {
 		template< typename List, typename Functor, typename Or >
 		struct find_if_or
 		{
-			using intermediate = typename find_if< List, Functor >::type;
-			using type = typename std::conditional<std::is_same<intermediate, void_type>::value, Or, intermediate >::type;
+			using intermediate = find_if_t< List, Functor >;
+			using type = util::conditional_t<std::is_same<intermediate, void_type>::value, Or, intermediate >;
 		};
+
+		template< typename List, typename Functor, typename Or >
+		using find_if_or_t = typename find_if_or<List, Functor, Or>::type;
 
 		template< typename T >
 		struct integral_constant_finder
@@ -80,27 +87,6 @@ namespace fix {
 			using type = void_type;
 		};
 
-/*
-		template< typename... T >
-		struct value_template
-		{
-			template < template< T... > class Template >
-			struct finder {
-				template< typename Elem >
-				struct apply {
-					using type = void_type;
-					static constexpr bool value = false;
-				};
-
-				template<T... Values>
-				struct apply< Template< Values... > >
-				{
-					using type = Template< Values... >;
-					static constexpr bool value = true;
-				};
-			};
-		};
-*/
 	}
 
 }
