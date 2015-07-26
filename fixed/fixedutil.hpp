@@ -58,13 +58,6 @@ namespace fix { namespace util {
 			);
 	}
 
-	template< typename T, typename S >
-	constexpr S saturate(T t, S s1, S s2)
-	{
-		return safe_less(t, util::min(s1, s2)) ? util::min(s1, s2) : (safe_less(util::max(s1, s2), t) ? util::max(s1, s2) : S(t));
-	}
-
-
 	template<typename T>
 	constexpr T max(T lhs, T rhs)
 	{
@@ -89,6 +82,12 @@ namespace fix { namespace util {
 		return min(min(t1, t2), t3, t...);
 	}
 	
+	template< typename T, typename S >
+	constexpr S saturate(T t, S s1, S s2)
+	{
+		return safe_less(t, util::min(s1, s2)) ? util::min(s1, s2) : (safe_less(util::max(s1, s2), t) ? util::max(s1, s2) : S(t));
+	}
+
 	template< typename T >
 	struct promoted_type {
 

@@ -30,7 +30,7 @@ namespace fix {
 		}
 
 		template<typename T>
-		constexpr typename enable_if_floating_point_t<T, T>
+		constexpr enable_if_floating_point_t<T, T>
 			abs2(T value)
 		{
 			return (value >= 0) ? value : -value;

@@ -294,7 +294,7 @@ namespace fix {
 			: value(value_)
 		{}
 
-		template<typename T, typename R>
+		template<int OI, int OF, bool OS, typename T, typename R>
 		constexpr fixed(fixed<I, F, S, T, R> other)
 			: value(other.value)
 		{
