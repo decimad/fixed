@@ -404,7 +404,7 @@ namespace fix {
 	//
 	// Operations
 	//
-	template< int Shift, typename RoundMode = rounding::floor, int I, int F, bool S, typename T, typename RT >
+	template< int Shift, typename RoundMode, int I, int F, bool S, typename T, typename RT >
 	constexpr typename detail::scaling_shift_values<fixed<I, F, S, T, RT>, Shift, RoundMode>::result_type
 	scaling_shift(fixed<I, F, S, T, RT > val)
 	{
