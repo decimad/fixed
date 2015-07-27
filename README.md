@@ -1,8 +1,42 @@
 # fixed
 fixed point template metaprogramming library
 
+Motivational example
+
+``` c++
+#include <fixed\fixed.hpp>	
+#define FCI(x) FIXED_CONSTANT_I(x)
+#define FCR(x,y) FIXED_CONSTANT(x, y)
+
+template< typename T, typename S = fix::enable_if_fixed_t<T> >
+constexpr auto sine_5th_order(T angle)
+{
+	using namespace fix;
+	constexpr int precision = T::data_bits;
+
+	// 3 constants for 5th order sine taylor approx
+	constexpr double pi = 3.1415926535897932384626433832795;
+	constexpr auto a = FCR(4.0*(3.0 / pi - 9.0 / 16.0), precision);
+	constexpr auto b = vshift<1>(a) - FCR(2.5, precision);
+	constexpr auto c = a - FCR(1.5, precision);
+
+	// calculate sine
+	return (angle*(a - square(angle)*(b - square(angle)*c)));
+}
+
+void test_sine()
+{
+	constexpr auto angle = FIXED_RANGE(-1.0, 1.0, 16)::from(0.5);
+	constexpr auto sinef = sine_5th_order(angle);
+
+	// check result
+	constexpr double sine = sinef.to<double>();
+}
+```
+
 Most Basic usage
 
+``` c++
     #include "fixed.hpp"
     using namespace fix;
     
@@ -25,9 +59,11 @@ Most Basic usage
     
     // automatic sizing for integer ranges
     FIXED_RANGE_I(-232, 5342) some;
+```
 
 All the types compile down to the fix::fixed template:
-    
+   
+``` c++    
     template< int I, int F, bool S, typename T, typename RT >
     struct fixed {
         // I:  integer bits (can be negative!)
@@ -85,5 +121,6 @@ Operations on fixed:
     
     // no operator for div given, since any reasonable div operation relies
     // on smart constraints to be useful.
+``` 
     
 for further usage see fixed/fixed_test.cpp
