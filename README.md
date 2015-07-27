@@ -21,10 +21,10 @@ template< typename T, typename S = fix::enable_if_fixed_t<T> >
 constexpr auto sine_5th_order(T angle)
 {
 	using namespace fix;
-        using cons = sine_5th_constants< T::data_bits >;
+	using cons = sine_5th_constants< T::data_bits >;
         
 	// calculate sine
-	return (angle*(a - square(angle)*(b - square(angle)*c)));
+	return (angle*(cons::a - square(angle)*(cons::b - square(angle)*cons::c)));
 }
 
 void test_sine()
