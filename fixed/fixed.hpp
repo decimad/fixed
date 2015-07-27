@@ -66,12 +66,6 @@ namespace fix {
 		template< typename T, bool Signed = std::is_signed<T>::value >
 		using promoted_t = typename promoted<T, Signed>::type;
 
-		template< typename T, T value >
-		constexpr auto promote_if_max()
-		{
-			return util::conditional_t<value == std::numeric_limits<T>::max(), promoted_t<T>, T>(value);
-		}
-
 		template< typename T1, typename T2 >
 		struct fitting_type {
 			using type = util::conditional_t<  
@@ -329,9 +323,9 @@ namespace fix {
 			: value(value_)
 		{}
 
-		template<typename T, typename R>
-		constexpr fixed(fixed<I, F, S, T, R> other)
-			: value(other.value)
+		template<int OI, int OF, bool OS, typename OT, typename ORT>
+		constexpr fixed(const fixed<OI, OF, OS, OT, ORT>& other)
+			: value( static_cast<value_type>(util::scaled_exp2(other.value, F-OF)) )
 		{
 		}
 
