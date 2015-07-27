@@ -447,7 +447,9 @@ namespace fix {
 		static constexpr bool value = true;
 	};
 
-
+	template< typename T, typename S = void >
+	using enable_if_fixed_t = util::enable_if_t< is_fixed<T>::value, S >;
+	
 	//
 	// Operations
 	//
