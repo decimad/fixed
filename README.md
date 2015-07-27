@@ -33,6 +33,7 @@ void test_sine()
 	constexpr double sine = sinef.to<double>();
 }
 ```
+![Intellisense Screenshot](/../screenshots/screenshots/intellisense_sine_example.png?raw=true)
 
 Most Basic usage
 
