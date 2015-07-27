@@ -110,6 +110,7 @@ namespace fix {
 
 	}
 
+	// this one is here for intellisense bug notification.
 	template< typename T, T A, T B>
 	struct value_range2 {
 
@@ -124,7 +125,7 @@ namespace fix {
 
 		template< typename S >
 		static constexpr T saturate(S value) {
-			return util::saturate(value, min, max);
+			return util::saturate(value, minval, maxval);
 		}
 
 	};
@@ -144,7 +145,7 @@ namespace fix {
 
 		template< typename S >
 		static constexpr T saturate(S value) {
-			return util::saturate(value, min, max);
+			return util::saturate(value, minval, maxval);
 		}
 	};
 
@@ -679,7 +680,7 @@ namespace fix {
 
 		template< typename RangeA, typename RangeB >
 		struct max_mul_result {
-			using result_type = typename mul_result_type_t<RangeA, RangeB>;
+			using result_type = mul_result_type_t<RangeA, RangeB>;
 
 			SC result_type value = 
 				util::max(
