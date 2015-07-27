@@ -111,14 +111,35 @@ namespace fix {
 	}
 
 	template< typename T, T A, T B>
-	struct value_range {
+	struct value_range2 {
+
+		SC bool is_signed = util::safe_less(A, 0) || util::safe_less(B, 0);
+		SC T minval = util::min(A, B);
+		SC T maxval = util::max(A, B);
+
+		static constexpr int  bits = util::range_bits(minval, maxval);
+
 		using value_type = T;
-		SC T minval = util::min<T>(A, B);
-		SC T maxval = util::max<T>(A, B);
-		SC bool is_signed    = util::safe_less(A, 0) || util::safe_less(B, 0);
+		using min_type = detail::value_type_t<bits, is_signed>;
+
+		template< typename S >
+		static constexpr T saturate(S value) {
+			return util::saturate(value, min, max);
+		}
+
+	};
+
+
+	template< typename T, T A, T B>
+	struct value_range {
 		
-		SC int  bits = util::range_bits<T,T>(minval, maxval);
+		SC bool is_signed = util::safe_less(A, 0) || util::safe_less(B, 0);
+		SC T minval = util::min(A, B);
+		SC T maxval = util::max(A, B);
 		
+		static constexpr int  bits = util::range_bits(minval, maxval);
+		
+		using value_type = T;
 		using min_type = detail::value_type_t<bits, is_signed>;
 
 		template< typename S >

@@ -518,9 +518,24 @@ namespace fix {
 		namespace detail {
 
 			template< typename T >
+			constexpr enable_if_t<std::is_signed<T>::value, bool>
+				max_val(T value)
+			{
+				return value == bitmask<T>(sizeof(T) * 8 - 1);
+			}
+
+			template< typename T >
+			constexpr enable_if_t<std::is_unsigned<T>::value, bool>
+				max_val(T value)
+			{
+				return value == bitmask<T>(sizeof(T) * 8);
+			}
+			
+			template< typename T >
 			constexpr int log2_ceil_incr(T value)
 			{
-				return (value == std::numeric_limits<T>::max()) ? (sizeof(T) * 8) : log2_ceil(value+1);
+				// I would love to compare vs. std::numerical_limits, but intellisense goes havok then... should notify microsoft
+				return (max_val(value)) ? (sizeof(T) * 8) : log2_ceil(value + 1);
 			}
 
 		}
@@ -530,9 +545,9 @@ namespace fix {
 			integer_bits(T value)
 		{
 			return 
-				(value == 0) ? 1 : (
+				(value == T(0)) ? (1) : (
 					(value > T(0)) ? 
-						detail::log2_ceil_incr(abs2(value)) : (log2_ceil(abs(value))+1)
+						detail::log2_ceil_incr(abs2(value)) : (log2_ceil(abs2(value))+1)
 				);
 		}
 
@@ -574,14 +589,10 @@ namespace fix {
 			constexpr int range_bits2(T t, U u) {
 				// Note, special cases to undo the integer_bits always at least return 1.
 				return
-					max(
+					max<int>(
 						integer_bits(abs2(t)) - (is_neg(t) ? 1 : 0),
 						integer_bits(abs2(u)) - (is_neg(u) ? 1 : 0)
-
-
-						//(incr_if_neg(t) == 0) ? (0) : integer_bits(abs2(incr_if_neg(t))),
-						//(incr_if_neg(u) == 0) ? (0) : integer_bits(abs2(incr_if_neg(u)))
-					) 
+					)
 					+ (any_neg(t,u) ? 1 : 0);
 			}
 
