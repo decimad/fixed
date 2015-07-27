@@ -469,12 +469,27 @@ namespace fix {
 		);
 	}
 
+	template< int Shift, typename RoundMode = rounding::floor, int I, int F, bool S, typename T, typename RT >
+	constexpr typename detail::scaling_shift_values<fixed<I, F, S, T, RT>, Shift, RoundMode>::result_type
+		sshift(fixed<I, F, S, T, RT > val)
+	{
+		return scaling_shift<Shift, RoundMode>(val);
+	}
+
 	template< int Shift, int I, int F, bool S, typename T, typename RT >
 	constexpr fixed<I + Shift, F - Shift, S, T, RT>
 	virtual_shift(fixed<I, F, S, T, RT> val)
 	{
 		return fixed<I + Shift, F - Shift, S, T, RT>(val.value);
 	}
+
+	template< int Shift, int I, int F, bool S, typename T, typename RT >
+	constexpr fixed<I + Shift, F - Shift, S, T, RT>
+		vshift(fixed<I, F, S, T, RT> val)
+	{
+		return fixed<I + Shift, F - Shift, S, T, RT>(val.value);
+	}
+
 
 	template< int Shift, typename RoundMode = rounding::floor, int I, int F, bool S, typename T, typename RT >
 	constexpr typename detail::literal_shift_values<fixed<I, F, S, T, RT>, Shift, RoundMode>::result_type
@@ -490,6 +505,13 @@ namespace fix {
 				Shift
 			)
 		);
+	}
+
+	template< int Shift, typename RoundMode = rounding::floor, int I, int F, bool S, typename T, typename RT >
+	constexpr typename detail::literal_shift_values<fixed<I, F, S, T, RT>, Shift, RoundMode>::result_type
+		lshift(fixed<I, F, S, T, RT> val)
+	{
+		return literal_shift<Shift, RoundMode>(val);
 	}
 
 	template< int I, int F = std::numeric_limits<int>::max() >

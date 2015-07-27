@@ -16,7 +16,6 @@ namespace fix {
 		//
 		// abs variations
 		//
-
 		using largest_unsigned_type = unsigned long long;
 		using largest_signed_type   = long long;
 
@@ -118,25 +117,6 @@ namespace fix {
 				(((value & 1) && (value > 1)) ? (2 + log2_floor(value >> 1)) : (1 + log2_ceil(value >> 1)));
 		}
 
-		template< typename T >
-		constexpr T floor(T value)
-		{
-			return
-				static_cast<T>(
-					(value - largest_signed_type(value) == 0) ? largest_signed_type(value) :
-					((value >= 0) ? largest_signed_type(value) : largest_signed_type(value) - 1)
-					);
-		}
-
-		template< typename T >
-		constexpr T ceil(T value)
-		{
-			return static_cast<T>(
-				(value - largest_signed_type(value) == 0) ? int(value) :
-				((value >= 0) ? (largest_signed_type(value) + 1) : largest_signed_type(value))
-				);
-		}
-
 		namespace detail {
 
 			template< typename T >
@@ -191,11 +171,6 @@ namespace fix {
 		constexpr bool is_power_of_2(T value)
 		{
 			return exp2<T>(log2_floor(safe_abs(value))) == safe_abs(value);
-		}
-
-		constexpr int binary_digits(double decimal)
-		{
-			return static_cast<int>(ceil(3.3219280948873623478703194294894 * decimal));
 		}
 
 		namespace detail {
@@ -253,6 +228,23 @@ namespace fix {
 			floor(T value, int digits)
 		{
 			return NoMask ? value : (value & ~bitmask<T>(digits));
+		}
+		
+		template< typename T >
+		constexpr util::enable_if_floating_point_t<T, T> floor(T value)
+		{
+			return static_cast<T>( (static_cast<largest_signed_type>(value) == value || value > 0) ? static_cast<largest_signed_type>(value) : (static_cast<largest_signed_type>(value)-1) );
+		}
+		
+		template< typename T >
+		constexpr util::enable_if_floating_point_t<T, T> ceil(T value)
+		{
+			return static_cast<T>( (static_cast<largest_signed_type>(value) == value || value < 0) ? static_cast<largest_signed_type>(value) : (static_cast<largest_signed_type>(value)+1) );
+		}
+
+		constexpr int binary_digits(double decimal)
+		{
+			return static_cast<int>(ceil(3.32192809488736234787031 * decimal));
 		}
 
 		template< bool NoMask = false, typename T >
