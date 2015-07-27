@@ -18,20 +18,20 @@ namespace {
 
 		CA fgas = util::range_bits(short(-2047), short(2047));
 
-		using foo_type = value_range<int16, -2047, 2047>; //std::decay_t<decltype(angle)>::range_type;
+		using foo_type = value_range<int16, -2047, 2047>;
 		constexpr auto bits64 = util::range_bits(short(-2047), short(2047));
 		constexpr auto bits32 = foo_type::bits;
 
-		using result_type = detail::add_result_type_t<std::decay_t<decltype(angle)>::range_type, std::decay_t<decltype(angle)>::range_type>;
+		using result_type = detail::add_result_value_type_t<std::decay_t<decltype(angle)>::range_type, std::decay_t<decltype(angle)>::range_type>;
 		CA maxval = detail::max_add_result< std::decay_t<decltype(angle)>::range_type, std::decay_t<decltype(angle)>::range_type >::value;
 		CA minval = detail::min_add_result< std::decay_t<decltype(angle)>::range_type, std::decay_t<decltype(angle)>::range_type >::value;
 
 		using my_range = value_range<result_type, maxval, minval>;
+
 		CA fok = my_range::is_signed;
 		CA fuk = my_range::bits;
-		CA fek = my_range::max;
-		CA fik = my_range::min;
-
+		CA fek = my_range::maxval;
+		CA fik = my_range::minval;
 
 		using test_type2 = detail::mul_result_range_t<std::decay_t<decltype(angle)>::range_type, std::decay_t<decltype(angle)>::range_type>;
 		CA bits = test_type2::bits;
@@ -39,6 +39,7 @@ namespace {
 		CA test = mul<positive>(angle, angle);
 		CA test2 = angle * angle;
 		CA test3 = angle + angle;
+		CA test4 = angle - angle;
 
 
 		CA product = fix::square(fix::square(angle));
@@ -63,8 +64,8 @@ namespace {
 
 		using my_type = FIXED_RANGE_I(-32768, 32767);
 
-		CA minval = my_type::range_type::min;
-		CA maxval = my_type::range_type::max;
+		CA minval = my_type::range_type::minval;
+		CA maxval = my_type::range_type::maxval;
 
 		//CA asdga = ::fix::util::integer_bits_interval(64.4231, -64.4231);
 
@@ -102,7 +103,7 @@ namespace {
 
 		CA isneg = ::fix::util::any_neg(-2.45, 10.45);
 
-		using range_type = ::fix::value_range<::fix::detail::value_type_t<(bits)+(32 - bits), ::fix::util::any_neg(-2.45, 10.45)>, ::fix::detail::to_fixed<bits, 32 - bits, ::fix::util::any_neg(-2.45, 10.45)>(-2.45), ::fix::detail::to_fixed<bits, 32 - bits, ::fix::util::any_neg(-2.45, 10.45)>(10.45)>::min_range_type;
+		using range_type = ::fix::value_range<::fix::detail::value_type_t<(bits)+(32 - bits), ::fix::util::any_neg(-2.45, 10.45)>, ::fix::detail::to_fixed<bits, 32 - bits, ::fix::util::any_neg(-2.45, 10.45)>(-2.45), ::fix::detail::to_fixed<bits, 32 - bits, ::fix::util::any_neg(-2.45, 10.45)>(10.45)>;
 
 		using range_s_value_type = FIXED_RANGE(-2.45, 10.45, 32);
 
@@ -162,21 +163,6 @@ namespace {
 		CA bmax = type_b::max();
 		CA bmin = type_b::min();
 
-		CA maxresult = util::max(
-			result_type(type_a::max().value) * type_b::max().value,
-			result_type(type_a::max().value) * type_b::min().value,
-			result_type(type_a::min().value) * type_b::max().value,
-			result_type(type_a::min().value) * type_b::min().value
-			);
-
-		CA minresult = util::min(
-			result_type(type_a::max().value) * type_b::max().value,
-			result_type(type_a::max().value) * type_b::min().value,
-			result_type(type_a::min().value) * type_b::max().value,
-			result_type(type_a::min().value) * type_b::min().value
-			);
-
-		CA teasa = util::log2_ceil(util::abs(minresult));
 	}
 
 
@@ -341,19 +327,7 @@ namespace {
 
 		//	constexpr auto val = value.scaling_shift<1>();
 	}
-	/*
-	void div_test() {
-	using nom = fix::sfixed<10, 12>;
-	using den = fix::sfixed<2, 27>;
-
-	constexpr auto some = fix::div<>(nom::from(-3.113), den::from(-0.0000001423));
-
-	constexpr auto result = fix::div<fix::positive, fix::rounding::zero, fix::max_size<32>>(nom::from(-3.213), den::from(-0.001523));
-	//static_assert(std::is_same<std::decay_t<decltype(result)>, fix::ufixed<3, 5>>::value, "Foooo!");
-	constexpr auto value = result.to<double>();
-	}
-	*/
-
+	
 	void div_test2() {
 		using namespace fix;
 		constexpr auto nom = integer_range<16000000000ull>(999982000ull);

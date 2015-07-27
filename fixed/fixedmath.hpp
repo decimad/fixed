@@ -114,7 +114,7 @@ namespace fix {
 			log2_ceil(T value)
 		{
 			return
-				(value == 1) ? 0 :
+				(value <= 1) ? 0 :
 				(((value & 1) && (value > 1)) ? (2 + log2_floor(value >> 1)) : (1 + log2_ceil(value >> 1)));
 		}
 

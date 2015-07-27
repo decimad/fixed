@@ -87,6 +87,8 @@ namespace fix {
 		template< int Bits, bool Signed >
 		struct value_type {
 		private:
+			static_assert( Bits > 0, "Foooo!");
+
 			using raw_type =
 				util::conditional_t< (Bits <= 8), int8,
 					util::conditional_t< (Bits <= 16), int16,
@@ -111,21 +113,32 @@ namespace fix {
 	template< typename T, T A, T B>
 	struct value_range {
 		using value_type = T;
-		SC T min = util::min(A,B);
-		SC T max = util::max(A,B);
+		SC T minval = util::min<T>(A, B);
+		SC T maxval = util::max<T>(A, B);
 		SC bool is_signed    = util::safe_less(A, 0) || util::safe_less(B, 0);
-		SC int  bits         = util::range_bits(min, max);
-		using min_type       = detail::value_type_t<bits, is_signed>;
-		using min_range_type = value_range<min_type, min, max>;
+		
+		SC int  bits = util::range_bits<T,T>(minval, maxval);
+		
+		using min_type = detail::value_type_t<bits, is_signed>;
 
 		template< typename S >
 		static constexpr T saturate(S value) {
 			return util::saturate(value, min, max);
 		}
 	};
-	
+
+	template< typename T >
+	struct is_value_range {
+		static constexpr bool value = false;
+	};
+
+	template< typename T, T A, T B >
+	struct is_value_range< value_range<T,A,B> > {
+		static constexpr bool value = true;
+	};
+
 #define RANGE_FROM_VALS(A,B) \
-	value_range<detail::fitting_type_t<decltype(A), decltype(B)>, A, B>::min_range_type
+	value_range<detail::fitting_type_t<decltype(A), decltype(B)>, A, B>
 
 	namespace detail {
 
@@ -159,7 +172,7 @@ namespace fix {
 		template< typename RangeT, RangeT RangeMin, RangeT RangeMax, typename LimitsT, LimitsT LimitsMin, LimitsT LimitsMax >
 		struct saturate_range< value_range<RangeT, RangeMin, RangeMax>, value_range<LimitsT, LimitsMin, LimitsMax> >
 		{
-			using type = typename value_range< RangeT, util::saturate(RangeMin, LimitsMin, LimitsMax), util::saturate(RangeMax, LimitsMin, LimitsMax) >::min_range_type;
+			using type = value_range< RangeT, util::saturate(RangeMin, LimitsMin, LimitsMax), util::saturate(RangeMax, LimitsMin, LimitsMax) >;
 		};
 
 		template< typename Range, typename Limits >
@@ -201,7 +214,7 @@ namespace fix {
 				F + Shift,
 				S,
 				destination_value_type,
-				value_range<destination_value_type, util::scaled_exp2<Rounding::value>(precast_type(Range::min), Shift), util::scaled_exp2<Rounding::value>(precast_type(Range::max), Shift)>
+				value_range<destination_value_type, util::scaled_exp2<Rounding::value>(precast_type(Range::minval), Shift), util::scaled_exp2<Rounding::value>(precast_type(Range::maxval), Shift)>
 			>;
 		};
 
@@ -230,7 +243,7 @@ namespace fix {
 				F,
 				S,
 				destination_value_type,
-				value_range<destination_value_type, util::scaled_exp2<Rounding::value>(precast_type(Range::min), Shift), util::scaled_exp2<Rounding::value>(precast_type(Range::max), Shift)>
+				value_range<destination_value_type, util::scaled_exp2<Rounding::value>(precast_type(Range::minval), Shift), util::scaled_exp2<Rounding::value>(precast_type(Range::maxval), Shift)>
 			>;
 		};
 
@@ -360,12 +373,12 @@ namespace fix {
 
 		static constexpr fixed max()
 		{
-			return fixed(static_cast<value_type>(range_type::max));
+			return fixed(static_cast<value_type>(range_type::maxval));
 		}
 
 		static constexpr fixed min()
 		{
-			return fixed(static_cast<value_type>(range_type::min));
+			return fixed(static_cast<value_type>(range_type::minval));
 		}
 
 		template< typename RoundingWrapper = rounding::floor, typename U >
@@ -400,6 +413,18 @@ namespace fix {
 
 	template< int I, int F, bool S, typename R >
 	using fixed_auto = ::fix::fixed<I, F, S, ::fix::detail::value_type_t<I + F, S>, R>;
+
+	template< typename T >
+	struct is_fixed {
+		static constexpr bool value = false;
+	};
+
+	template< int I, int F, bool S, typename T, typename RT >
+	struct is_fixed< fixed<I, F, S, T, RT > >
+	{
+		static constexpr bool value = true;
+	};
+
 
 	//
 	// Operations
@@ -569,10 +594,11 @@ namespace fix {
 		};
 	}
 
-	template< typename... Args, typename NomT, int NomI, int NomF, bool NomS, typename NomR, typename DenT, int DenI, int DenF, bool DenS, typename DenR>
-	constexpr auto div(fixed<NomI, NomF, NomS, NomT, NomR> nom, fixed<DenI, DenF, DenS, DenT, DenR> den)
+	template< typename... Args, typename NomType, typename DenType>
+	constexpr util::enable_if_t<is_fixed<NomType>::value && is_fixed<DenType>::value, typename detail::div_struct<meta::list<Args...>, NomType, DenType>::result_type>
+		div(NomType nom, DenType den)
 	{
-		return detail::div_struct<meta::list<Args...>, fixed<NomI, NomF, NomS, NomT, NomR>, fixed<DenI, DenF, DenS, DenT, DenR>>::divide(nom, den);
+		return detail::div_struct<meta::list<Args...>, NomType, DenType>::divide(nom, den);
 	}
 
 	//
@@ -608,23 +634,25 @@ namespace fix {
 				std::is_signed<typename RangeA::value_type>::value || std::is_signed<typename RangeB::value_type>::value
 			>;
 
-		template< typename RangeA, typename RangeB, typename result_type = mul_result_type_t<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB >
 		struct max_mul_result {
-			SC result_type value = util::max(
-				result_type(RangeA::max) * RangeB::max,
-				result_type(RangeA::max) * RangeB::min,
-				result_type(RangeA::min) * RangeB::max,
-				result_type(RangeA::min) * RangeB::min
+			using result_type = typename mul_result_type_t<RangeA, RangeB>;
+
+			SC result_type value = 
+				util::max(
+					util::max( result_type(RangeA::maxval) * result_type(RangeB::maxval), result_type(RangeA::maxval) * result_type(RangeB::minval) ),
+					util::max( result_type(RangeA::minval) * result_type(RangeB::maxval), result_type(RangeA::minval) * result_type(RangeB::minval) )
 				);
 		};
 
-		template< typename RangeA, typename RangeB, typename result_type = mul_result_type_t<RangeA,RangeB> >
+		template< typename RangeA, typename RangeB >
 		struct min_mul_result {
-			SC result_type value = util::min(
-				result_type(RangeA::max) * RangeB::max,
-				result_type(RangeA::max) * RangeB::min,
-				result_type(RangeA::min) * RangeB::max,
-				result_type(RangeA::min) * RangeB::min
+			using result_type = mul_result_type_t<RangeA, RangeB>;
+
+			SC result_type value = 
+				util::min(
+					util::min( result_type(RangeA::maxval) * result_type(RangeB::maxval), result_type(RangeA::maxval) * result_type(RangeB::minval) ),
+					util::min( result_type(RangeA::minval) * result_type(RangeB::maxval), result_type(RangeA::minval) * result_type(RangeB::minval) )
 				);
 		};
 
@@ -689,10 +717,10 @@ namespace fix {
 			static constexpr int result_shift = result_radix_pos - mul_result_radix_pos;
 
 			using range_value_type = typename range::value_type;
-			static constexpr auto result_min = (assume_positive && range::min < 0) ? range_value_type(0) : (util::shifted(range::min, result_shift));
-			static constexpr auto result_max = util::shifted(range::max, result_shift);
+			static constexpr auto result_min = (assume_positive && range::minval < 0) ? range_value_type(0) : (util::shifted(range::minval, result_shift));
+			static constexpr auto result_max = util::shifted(range::maxval, result_shift);
 
-			using result_range_type = typename value_range<range_value_type, result_min, result_max>::min_range_type;
+			using result_range_type = value_range<range_value_type, result_min, result_max>;
 
 			using result_type = fixed_auto<result_i, result_f, auto_s && !assume_positive, result_range_type>;
 
@@ -713,11 +741,11 @@ namespace fix {
 
 	}
 
-	template< typename... Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR>
-	constexpr typename detail::mul_struct<meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR>>::result_type
-		mul(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	template< typename... Args, typename AT, typename BT>
+	constexpr util::enable_if_t< is_fixed<AT>::value && is_fixed<BT>::value, typename detail::mul_struct<meta::list<Args...>, AT, BT>::result_type>
+		mul(AT a, BT b)
 	{
-		return detail::mul_struct<meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR>>::mul(a, b);
+		return detail::mul_struct<meta::list<Args...>, AT, BT>::mul(a, b);
 	}
 
 #define DEBUG_MUL( A, B, ... ) \
@@ -754,77 +782,125 @@ namespace fix {
 		};
 
 		template< typename RangeA, typename RangeB >
-		using sub_result_type_t = detail::value_type_t<
-			util::min<int>(
-				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type))*8,
-				64
-				), true>;
+		struct sub_result_value_type;
+
+		template< typename AT, AT amin, AT amax, typename BT, BT bmin, BT bmax >
+		struct sub_result_value_type< value_range<AT, amin, amax>, value_range<BT, bmin, bmax> > {
+			using a_range = value_range<AT, amin, amax>;
+			using b_range = value_range<BT, bmin, bmax>;
+			
+			using type = detail::value_type_t<
+				util::max<int>(util::range_bits(amin, amax), util::range_bits(bmin, bmax)),
+				a_range::is_signed || b_range::is_signed
+			>;
+		};
+		
+		template< typename RangeA, typename RangeB >
+		using sub_result_value_type_t = typename sub_result_value_type<RangeA, RangeB>::type;
 
 		template< typename RangeA, typename RangeB >
-		using sub_temporary_type_t = detail::value_type_t<
-			util::min<int>(
-				util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type)) * 8 + 1,
-				64
-				), true>;
+		struct sub_temporary_value_type;
 
-		template< typename RangeA, typename RangeB, typename res_type = sub_result_type_t<RangeA,RangeB>, typename temp_type = sub_temporary_type_t<RangeA, RangeB> >
+		template< typename AT, AT amin, AT amax, typename BT, BT bmin, BT bmax >
+		struct sub_temporary_value_type< value_range<AT, amin, amax>, value_range<BT, bmin, bmax> > {
+			using a_range = value_range<AT, amin, amax>;
+			using b_range = value_range<BT, bmin, bmax>;
+
+			using type = detail::value_type_t<
+				util::max<int>(util::range_bits(amin, amax), util::range_bits(bmin, bmax)) + 1,
+				a_range::is_signed || b_range::is_signed
+			>;
+		};
+
+		template< typename RangeA, typename RangeB >
+		using sub_temporary_value_type_t = typename sub_temporary_value_type<RangeA, RangeB>::type;
+			
+		template< typename RangeA, typename RangeB >
 		struct max_sub_result {
+			static_assert(is_value_range<RangeA>::value && is_value_range<RangeB>::value, "No value range!");
+
+			using res_type = sub_result_value_type_t<RangeA, RangeB>;
+			using temp_type = sub_temporary_value_type_t<RangeA, RangeB>;
+
 			SC res_type value = static_cast<res_type>(
 				util::max(
-					temp_type(RangeA::max) - RangeB::max,
-					temp_type(RangeA::max) - RangeB::min,
-					temp_type(RangeA::min) - RangeB::max,
-					temp_type(RangeA::min) - RangeB::min
+					util::max( temp_type(RangeA::maxval) - temp_type(RangeB::maxval), temp_type(RangeA::maxval) - temp_type(RangeB::minval) ),
+					util::max( temp_type(RangeA::minval) - temp_type(RangeB::maxval), temp_type(RangeA::minval) - temp_type(RangeB::minval) )
 				)
 			);
 		};
 
-		template< typename RangeA, typename RangeB, typename res_type = sub_result_type_t<RangeA, RangeB>, typename temp_type = sub_temporary_type_t<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB>
 		struct min_sub_result {
+			static_assert(is_value_range<RangeA>::value && is_value_range<RangeB>::value, "No value range!");
+
+			using res_type  = sub_result_value_type_t<RangeA, RangeB>;
+			using temp_type = sub_temporary_value_type_t<RangeA, RangeB>;
+
 			SC res_type value = static_cast<res_type>(
 				util::min(
-					temp_type(RangeA::max) - RangeB::max,
-					temp_type(RangeA::max) - RangeB::min,
-					temp_type(RangeA::min) - RangeB::max,
-					temp_type(RangeA::min) - RangeB::min
+					util::min( temp_type(RangeA::maxval) - temp_type(RangeB::maxval), temp_type(RangeA::maxval) - temp_type(RangeB::minval) ),
+					util::min( temp_type(RangeA::minval) - temp_type(RangeB::maxval), temp_type(RangeA::minval) - temp_type(RangeB::minval) )
 				)
 			);
 		};
 
 		template< typename RangeA, typename RangeB >
-		using add_result_type_t = detail::value_type_t<
-			util::max(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type))*8,		
-			std::is_signed<typename RangeA::min_type>::value || std::is_signed<typename RangeB::min_type>::value	
-		>;
+		struct add_result_value_type;
+
+		template< typename AT, AT amin, AT amax, typename BT, BT bmin, BT bmax >
+		struct add_result_value_type< value_range<AT, amin, amax>, value_range<BT, bmin, bmax> > {
+			using type = value_type_t<
+				util::max(
+					util::range_bits(amin, amax),
+					util::range_bits(bmin ,bmax)
+				),
+				util::is_neg(amin) || util::is_neg(amax) || util::is_neg(bmin) || util::is_neg(bmax)
+			>;
+		};
 
 		template< typename RangeA, typename RangeB >
-		using add_temporary_type_t = detail::value_type_t<
-			util::min<int>(
-				util::max<int>(sizeof(typename RangeA::min_type), sizeof(typename RangeB::min_type)
-					) * 8 + 1, 64), 
-			std::is_signed<typename RangeA::min_type>::value || std::is_signed<typename RangeB::min_type>::value 
-		>;
+		using add_result_value_type_t = typename add_result_value_type<RangeA,RangeB>::type;
 
-		template< typename RangeA, typename RangeB, typename res_type = add_result_type_t<RangeA, RangeB>, typename temp_type = add_temporary_type_t<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB >
+		struct add_temporary_value_type;
+
+		template< typename AT, AT amin, AT amax, typename BT, BT bmin, BT bmax >
+		struct add_temporary_value_type< value_range<AT, amin, amax>, value_range<BT, bmin, bmax> > {
+			using type = value_type_t<
+				util::max(
+					util::range_bits(amin, amax),
+					util::range_bits(bmin, bmax)
+					) + 1,
+				util::is_neg(amin) || util::is_neg(amax) || util::is_neg(bmin) || util::is_neg(bmax)
+			>;
+		};
+
+		template< typename RangeA, typename RangeB >
+		using add_temporary_value_type_t = typename add_temporary_value_type<RangeA, RangeB>::type;
+
+		template< typename RangeA, typename RangeB>
 		struct max_add_result {
+			using res_type  = add_result_value_type_t   <RangeA, RangeB>;
+			using temp_type = add_temporary_value_type_t<RangeA, RangeB>;
+
 			SC res_type value = static_cast<res_type>(
 				util::max(
-					temp_type(RangeA::max) + RangeB::max,
-					temp_type(RangeA::max) + RangeB::min,
-					temp_type(RangeA::min) + RangeB::max,
-					temp_type(RangeA::min) + RangeB::min
+					util::max(temp_type(RangeA::maxval) + temp_type(RangeB::maxval), temp_type(RangeA::maxval) + temp_type(RangeB::minval)),
+					util::max(temp_type(RangeA::minval) + temp_type(RangeB::maxval), temp_type(RangeA::minval) + temp_type(RangeB::minval))
 					)
 				);
 		};
 
-		template< typename RangeA, typename RangeB, typename res_type = add_result_type_t<RangeA, RangeB>, typename temp_type = add_temporary_type_t<RangeA, RangeB> >
+		template< typename RangeA, typename RangeB >
 		struct min_add_result {
+			using res_type = add_result_value_type_t<RangeA, RangeB>;
+			using temp_type = add_temporary_value_type_t<RangeA, RangeB>;
+
 			SC res_type value = static_cast<res_type>(
 				util::min(
-					temp_type(RangeA::max) + RangeB::max,
-					temp_type(RangeA::max) + RangeB::min,
-					temp_type(RangeA::min) + RangeB::max,
-					temp_type(RangeA::min) + RangeB::min
+					util::min(temp_type(RangeA::maxval) + temp_type(RangeB::maxval), temp_type(RangeA::maxval) + temp_type(RangeB::minval)),
+					util::min(temp_type(RangeA::minval) + temp_type(RangeB::maxval), temp_type(RangeA::minval) + temp_type(RangeB::minval))
 					)
 				);
 		};
@@ -894,17 +970,17 @@ namespace fix {
 			using shifted_a_range = typename shifted_a_type::range_type;
 			using shifted_b_range = typename shifted_b_type::range_type;
 
-			using auto_sub_result_range = typename value_range <
-				sub_result_type_t<shifted_a_range, shifted_b_range>,
+			using auto_sub_result_range = value_range <
+				sub_result_value_type_t<shifted_a_range, shifted_b_range>,
 				min_sub_result<shifted_a_range, shifted_b_range>::value,
 				max_sub_result<shifted_a_range, shifted_b_range>::value
-			>::min_range_type;
+			>;
 
-			using auto_add_result_range = typename value_range <
-				sub_result_type_t<shifted_a_range, shifted_b_range>,
+			using auto_add_result_range = value_range <
+				add_result_value_type_t<shifted_a_range, shifted_b_range>,
 				min_add_result<shifted_a_range, shifted_b_range>::value,
 				max_add_result<shifted_a_range, shifted_b_range>::value
-			>::min_range_type;
+			>;
 
 			// Don't eat up more bits than the operands
 			using max_add_range = auto_fixed_range<util::min<int>(util::max<int>(shifted_a_range::bits, shifted_b_range::bits), auto_add_result_range::bits), auto_add_result_range::is_signed>;
@@ -945,18 +1021,18 @@ namespace fix {
 #define DEBUG_ADD_SUB( A, B, ... ) \
 	::fix::detail::add_sub_struct< ::fix::meta::list< __VA_ARGS__ >,  std::decay_t<decltype(A)>, std::decay_t<decltype(B)> >
 
-	template< typename... Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
-	constexpr typename detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::add_result_type
-		add(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	template< typename... Args, typename AT, typename  BT >
+	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::add_sub_struct< meta::list<Args...>, AT, BT >::add_result_type>
+		add(AT a, BT b)
 	{
-		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::add(a, b);
+		return detail::add_sub_struct< meta::list<Args...>, AT, BT >::add(a, b);
 	}
 
-	template< typename... Args, typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
-	constexpr typename detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::sub_result_type
-		sub(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	template< typename... Args, typename AT, typename BT >
+	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::add_sub_struct< meta::list<Args...>, AT, BT >::sub_result_type>
+		sub(AT a, BT b)
 	{
-		return detail::add_sub_struct< meta::list<Args...>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::sub(a, b);
+		return detail::add_sub_struct< meta::list<Args...>, AT, BT >::sub(a, b);
 	}
 
 	template< typename T >
@@ -978,29 +1054,29 @@ namespace fix {
 	}
 
 	// default operators (no args to ops)
-	template < typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR>
-	constexpr typename detail::add_sub_struct< meta::list<>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::add_result_type
-		operator+(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	template< typename AT, typename  BT >
+	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::add_sub_struct< meta::list<>, AT, BT >::add_result_type>
+		operator+(AT a, BT b)
 	{
 		return add<>(a, b);
 	}
 
-	template< typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
-	constexpr typename detail::add_sub_struct< meta::list<>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::sub_result_type
-	operator-(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	template< typename AT, typename  BT >
+	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::add_sub_struct< meta::list<>, AT, BT >::sub_result_type>
+		operator-(AT a, BT b)
 	{
 		return sub<>(a, b);
 	}
 
-	template< typename AT, int AI, int AF, bool AS, typename AR, typename BT, int BI, int BF, bool BS, typename BR >
-	constexpr typename detail::mul_struct< meta::list<>, fixed<AI, AF, AS, AT, AR>, fixed<BI, BF, BS, BT, BR> >::result_type
-	operator*(fixed<AI, AF, AS, AT, AR> a, fixed<BI, BF, BS, BT, BR> b)
+	template< typename AT, typename  BT >
+	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::mul_struct< meta::list<>, AT, BT >::result_type>
+	operator*(AT a, BT b)
 	{
 		return mul<>(a, b);
 	}
 
 	template< typename FixedType >
-	constexpr typename detail::mul_struct< meta::list<positive>, FixedType, FixedType >::result_type
+	constexpr util::enable_if_t< is_fixed<FixedType>::value, typename detail::mul_struct< meta::list<positive>, FixedType, FixedType >::result_type >
 	square(FixedType val)
 	{
 		return mul<positive>(val, val);
@@ -1010,7 +1086,7 @@ namespace fix {
 
 // internal macro
 #define FIXED_RANGE_FROM_VALS(I,F,A,B) \
-	typename ::fix::value_range<::fix::detail::value_type_t<(I)+(F), ::fix::util::any_neg(A,B)>, ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B), ::fix::rounding::floor>(::fix::util::mixed_min(A,B)), ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B), ::fix::rounding::ceil>(::fix::util::mixed_max(A,B))>::min_range_type
+	::fix::value_range<::fix::detail::value_type_t<(I)+(F), ::fix::util::any_neg(A,B)>, ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B), ::fix::rounding::floor>(::fix::util::mixed_min(A,B)), ::fix::detail::to_fixed<I,F,::fix::util::any_neg(A,B), ::fix::rounding::ceil>(::fix::util::mixed_max(A,B))>
 
 // fixed type of reals ranging from A to B with given fraction bits (precision)
 #define FIXED_RANGE_P(A,B,Precision) \

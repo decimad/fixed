@@ -65,7 +65,7 @@ namespace fix { namespace util {
 	}
 
 	template<typename T, typename... Args>
-	constexpr T max(T t1, T t2, T t3, Args&&... t)
+	constexpr T max_n(T t1, T t2, T t3, Args&&... t)
 	{
 		return max(max(t1, t2), t3, t...);
 	}
@@ -77,7 +77,7 @@ namespace fix { namespace util {
 	}
 
 	template<typename T, typename... Args>
-	constexpr T min(T t1, T t2, T t3, Args... t)
+	constexpr T min_n(T t1, T t2, T t3, Args... t)
 	{
 		return min(min(t1, t2), t3, t...);
 	}

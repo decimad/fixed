@@ -118,6 +118,10 @@ namespace {
 		static_assert(range_bits(-1.0, 0.9)     == 1, "range_bits<integral, integral> broken.");
 
 		static_assert(range_bits(0.99, 1.01) == 1, "range_bits<float, float> broken.");
+
+
+		constexpr auto val3 = range_bits(short(-2047), short(2047));
+		constexpr auto val5 = range_bits(0.3, 0.1);
 	}
 
 }
