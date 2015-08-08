@@ -831,7 +831,7 @@ namespace fix {
 			
 			using type = detail::value_type_t<
 				util::max<int>(util::range_bits(amin, amax), util::range_bits(bmin, bmax)),
-				a_range::is_signed || b_range::is_signed
+				util::safe_less(a_range::minval, b_range::maxval)
 			>;
 		};
 		
@@ -848,7 +848,7 @@ namespace fix {
 
 			using type = detail::value_type_t<
 				util::max<int>(util::range_bits(amin, amax), util::range_bits(bmin, bmax)) + 1,
-				a_range::is_signed || b_range::is_signed
+				util::safe_less(a_range::minval, b_range::maxval)
 			>;
 		};
 
