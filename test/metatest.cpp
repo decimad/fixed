@@ -4,7 +4,7 @@
 //          http://www.boost.org/LICENSE_1_0.txt)
 
 
-#include "fixedmeta.hpp"
+#include <fixed/fixedmeta.hpp>
 #include <fixed/fixed.hpp>
 
 template< int a, int b >
