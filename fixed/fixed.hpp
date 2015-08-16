@@ -13,9 +13,6 @@
 // mst 2015/07/22
 // Todo:
 //       - add next_even/next_odd rounding mode
-//       - see if the shift operations should rather be constexpr free functions
-//       - see if fixed::to should rather be a constexpr free function
-//       - no rounding applied in scaling shift yet (should really be free function I guess)
 //       - hope people find bugs/fixes ;)
 
 namespace fix {
@@ -634,8 +631,8 @@ namespace fix {
 		};
 	}
 
-	template< typename... Args, typename NomType, typename DenType>
-	constexpr util::enable_if_t<is_fixed<NomType>::value && is_fixed<DenType>::value, typename detail::div_struct<meta::list<Args...>, NomType, DenType>::result_type>
+	template< typename... Args, typename NomType, typename DenType, typename Test = util::enable_if_t<is_fixed<NomType>::value && is_fixed<DenType>::value>>
+	constexpr auto /*typename detail::div_struct<meta::list<Args...>, NomType, DenType>::result_type*/
 		div(NomType nom, DenType den)
 	{
 		return detail::div_struct<meta::list<Args...>, NomType, DenType>::divide(nom, den);
@@ -781,8 +778,8 @@ namespace fix {
 
 	}
 
-	template< typename... Args, typename AT, typename BT>
-	constexpr util::enable_if_t< is_fixed<AT>::value && is_fixed<BT>::value, typename detail::mul_struct<meta::list<Args...>, AT, BT>::result_type>
+	template< typename... Args, typename AT, typename BT, typename Test = util::enable_if_t< is_fixed<AT>::value && is_fixed<BT>::value>>
+	constexpr auto /* typename detail::mul_struct<meta::list<Args...>, AT, BT>::result_type */
 		mul(AT a, BT b)
 	{
 		return detail::mul_struct<meta::list<Args...>, AT, BT>::mul(a, b);
@@ -1061,15 +1058,15 @@ namespace fix {
 #define DEBUG_ADD_SUB( A, B, ... ) \
 	::fix::detail::add_sub_struct< ::fix::meta::list< __VA_ARGS__ >,  std::decay_t<decltype(A)>, std::decay_t<decltype(B)> >
 
-	template< typename... Args, typename AT, typename  BT >
-	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::add_sub_struct< meta::list<Args...>, AT, BT >::add_result_type>
+	template< typename... Args, typename AT, typename  BT, typename Test = util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value> >
+	constexpr auto /* typename detail::add_sub_struct< meta::list<Args...>, AT, BT >::add_result_type */
 		add(AT a, BT b)
 	{
 		return detail::add_sub_struct< meta::list<Args...>, AT, BT >::add(a, b);
 	}
 
-	template< typename... Args, typename AT, typename BT >
-	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::add_sub_struct< meta::list<Args...>, AT, BT >::sub_result_type>
+	template< typename... Args, typename AT, typename BT, typename Test = util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value>>
+	constexpr auto /*typename detail::add_sub_struct< meta::list<Args...>, AT, BT >::sub_result_type*/
 		sub(AT a, BT b)
 	{
 		return detail::add_sub_struct< meta::list<Args...>, AT, BT >::sub(a, b);
@@ -1094,29 +1091,29 @@ namespace fix {
 	}
 
 	// default operators (no args to ops)
-	template< typename AT, typename  BT >
-	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::add_sub_struct< meta::list<>, AT, BT >::add_result_type>
+	template< typename AT, typename  BT, typename Test = util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value>>
+	constexpr auto /*typename detail::add_sub_struct< meta::list<>, AT, BT >::add_result_type*/
 		operator+(AT a, BT b)
 	{
 		return add<>(a, b);
 	}
 
-	template< typename AT, typename  BT >
-	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::add_sub_struct< meta::list<>, AT, BT >::sub_result_type>
+	template< typename AT, typename  BT, typename Test = util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value>>
+	constexpr auto /*typename detail::add_sub_struct< meta::list<>, AT, BT >::sub_result_type*/
 		operator-(AT a, BT b)
 	{
 		return sub<>(a, b);
 	}
 
-	template< typename AT, typename  BT >
-	constexpr util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value, typename detail::mul_struct< meta::list<>, AT, BT >::result_type>
+	template< typename AT, typename  BT, typename Test = util::enable_if_t<is_fixed<AT>::value && is_fixed<BT>::value> >
+	constexpr auto /*typename detail::mul_struct< meta::list<>, AT, BT >::result_type*/
 	operator*(AT a, BT b)
 	{
 		return mul<>(a, b);
 	}
 
-	template< typename FixedType >
-	constexpr util::enable_if_t< is_fixed<FixedType>::value, typename detail::mul_struct< meta::list<positive>, FixedType, FixedType >::result_type >
+	template< typename FixedType, typename Test = util::enable_if_t< is_fixed<FixedType>::value >  >
+	constexpr auto /*typename detail::mul_struct< meta::list<positive>, FixedType, FixedType >::result_type*/
 	square(FixedType val)
 	{
 		return mul<positive>(val, val);
