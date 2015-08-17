@@ -176,7 +176,7 @@ namespace fix {
 		namespace detail {
 			template<typename T>
 			constexpr T bitmask2(int bits) {
-				return ((bits < sizeof(T) * 8) ? ((T(1) << bits) - 1) : T(-1));
+				return ((bits < int(sizeof(T) * 8)) ? ((T(1) << bits) - 1) : T(-1));
 			}
 		}
 
